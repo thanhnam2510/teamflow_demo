@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#4f46e5" />
+    <title>TeamFlow</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./css/fonts.css" />
+    <link rel="stylesheet" href="./css/tokens.css" />
+    <link rel="stylesheet" href="./css/angular.css" />
+    <link rel="stylesheet" href="./css/styles.css" />
+    <link rel="stylesheet" href="./css/manual.css" />
+    <script>
+      try {
+        const mode = localStorage.getItem('teamflow.demo.theme');
+        if (
+          mode === 'dark' ||
+          ((!mode || mode === 'system') && matchMedia('(prefers-color-scheme: dark)').matches)
+        )
+          document.documentElement.classList.add('tf-dark');
+      } catch {}
+    </script>
+    <script defer src="./js/strings.js"></script>
+    <script defer src="./js/mock-data.js"></script>
+    <script defer src="./js/storage.js"></script>
+    <script defer src="./js/mock-api.js"></script>
+    <script defer src="./js/app.js"></script>
+    <script defer src="./js/work.js"></script>
+    <script defer src="./js/operations.js"></script>
+    <script defer src="./js/manual-core.js"></script>
+    <script defer src="./assets/qrcode.js"></script>
+    <script defer src="./js/manual-operations.js"></script>
+    <script defer src="./js/manual-people.js"></script>
+    <script defer src="./js/manual-collaboration.js"></script>
+    <script defer src="./js/manual-projects.js"></script>
+    <script defer src="./js/manual-governance.js"></script>
+  </head>
+  <body>
+    <div id="app" class="app-shell"></div>
+    <dialog id="dialog"></dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript>Bật JavaScript để sử dụng TeamFlow Demo.</noscript>
+  </body>
+</html>

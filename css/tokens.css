@@ -1,0 +1,136 @@
+:root {
+  --tf-indigo-50: #eef2ff;
+  --tf-indigo-100: #e0e7ff;
+  --tf-indigo-200: #c7d2fe;
+  --tf-indigo-400: #818cf8;
+  --tf-indigo-500: #6366f1;
+  --tf-indigo-600: #4f46e5;
+  --tf-indigo-700: #4338ca;
+  --tf-indigo-900: #1e1b4b;
+  --tf-violet-500: #8b5cf6;
+  --tf-violet-600: #7c3aed;
+  --tf-cyan-400: #22d3ee;
+  --tf-cyan-500: #06b6d4;
+  --tf-emerald-500: #10b981;
+  --tf-amber-500: #f59e0b;
+  --tf-rose-500: #f43f5e;
+  --tf-slate-50: #f8fafc;
+  --tf-slate-100: #f1f5f9;
+  --tf-slate-200: #e2e8f0;
+  --tf-slate-300: #cbd5e1;
+  --tf-slate-400: #94a3b8;
+  --tf-slate-500: #64748b;
+  --tf-slate-600: #475569;
+  --tf-slate-700: #334155;
+  --tf-slate-800: #1e293b;
+  --tf-slate-900: #0f172a;
+  --tf-slate-950: #020617;
+
+  /* Cards, dialogs and inputs; the page behind them is --mat-sys-background. */
+  --tf-surface: #fff;
+  /* Sticky bars over scrolling content; follows the theme's surface. */
+  --tf-surface-glass: color-mix(in srgb, var(--tf-surface) 85%, transparent);
+
+  /* Soft status backgrounds and the strong text that sits on them. */
+  --tf-red-50: #fef2f2;
+  --tf-red-100: #fee2e2;
+  --tf-red-600: #dc2626;
+  --tf-red-700: #b91c1c;
+  --tf-red-800: #991b1b;
+  --tf-rose-50: #fff1f2;
+  --tf-rose-100: #ffe4e6;
+  --tf-rose-600: #e11d48;
+  --tf-rose-700: #be123c;
+  --tf-amber-50: #fffbeb;
+  --tf-amber-100: #fef3c7;
+  --tf-amber-200: #fde68a;
+  --tf-amber-600: #d97706;
+  --tf-amber-700: #b45309;
+  --tf-amber-800: #92400e;
+  --tf-emerald-50: #ecfdf5;
+  --tf-emerald-100: #d1fae5;
+  --tf-emerald-600: #059669;
+  --tf-emerald-700: #047857;
+  --tf-green-100: #dcfce7;
+  --tf-sky-50: #f0f9ff;
+  --tf-sky-100: #e0f2fe;
+  --tf-sky-600: #0284c7;
+
+  --tf-gradient-brand: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #06b6d4 100%);
+  --tf-gradient-button: linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%);
+  --tf-gradient-night: linear-gradient(160deg, #0b1023 0%, #1e1b4b 55%, #312e81 100%);
+
+  --tf-radius-sm: 8px;
+  --tf-radius-md: 12px;
+  --tf-radius-lg: 18px;
+  --tf-radius-xl: 24px;
+
+  /* The app topbar is sticky, so anything sticky inside the page has to start below it. A sticky box
+     also has to fit above the page's bottom padding (3rem), or reaching the end pushes it under the topbar. */
+  --tf-topbar-height: 64px;
+  --tf-sticky-top: calc(var(--tf-topbar-height) + 1rem);
+  --tf-sticky-max-height: calc(100dvh - var(--tf-sticky-top) - 3rem);
+
+  --tf-shadow-xs: 0 1px 2px rgb(15 23 42 / 6%);
+  --tf-shadow-sm: 0 1px 3px rgb(15 23 42 / 8%), 0 1px 2px rgb(15 23 42 / 4%);
+  --tf-shadow-md: 0 8px 24px -6px rgb(15 23 42 / 12%), 0 2px 6px rgb(15 23 42 / 5%);
+  --tf-shadow-lg: 0 24px 48px -12px rgb(30 27 75 / 22%), 0 4px 12px rgb(15 23 42 / 6%);
+  --tf-shadow-glow: 0 10px 30px -8px rgb(79 70 229 / 55%);
+
+  --tf-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --tf-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --tf-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Dark mode: the slate scale flips so text stays light on dark surfaces, and soft tints turn deep. */
+html.tf-dark {
+  --tf-indigo-50: #1e1b4b;
+  --tf-indigo-100: #272463;
+  --tf-indigo-200: #3730a3;
+  --tf-indigo-400: #818cf8;
+  --tf-indigo-600: #a5b4fc;
+  --tf-indigo-700: #c7d2fe;
+  --tf-indigo-900: #e0e7ff;
+  --tf-slate-50: #131c2e;
+  --tf-slate-100: #1a2438;
+  --tf-slate-200: #273349;
+  --tf-slate-300: #3b4a63;
+  --tf-slate-400: #74839b;
+  --tf-slate-500: #94a3b8;
+  --tf-slate-600: #b4c0d1;
+  --tf-slate-700: #cbd5e1;
+  --tf-slate-800: #e2e8f0;
+  --tf-slate-900: #f1f5f9;
+  --tf-slate-950: #f8fafc;
+
+  --tf-surface: #0f1729;
+
+  --tf-red-50: #2a1216;
+  --tf-red-100: #3b161b;
+  --tf-red-600: #f87171;
+  --tf-red-700: #fca5a5;
+  --tf-red-800: #fecaca;
+  --tf-rose-50: #2b1119;
+  --tf-rose-100: #3d1622;
+  --tf-rose-600: #fb7185;
+  --tf-rose-700: #fda4af;
+  --tf-amber-50: #2a2010;
+  --tf-amber-100: #3a2c12;
+  --tf-amber-200: #5c4517;
+  --tf-amber-600: #fbbf24;
+  --tf-amber-700: #fcd34d;
+  --tf-amber-800: #fde68a;
+  --tf-emerald-50: #0f2a22;
+  --tf-emerald-100: #12382c;
+  --tf-emerald-600: #34d399;
+  --tf-emerald-700: #6ee7b7;
+  --tf-green-100: #143524;
+  --tf-sky-50: #0d2233;
+  --tf-sky-100: #10304a;
+  --tf-sky-600: #38bdf8;
+
+  --tf-shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --tf-shadow-sm: 0 1px 3px rgb(0 0 0 / 40%), 0 1px 2px rgb(0 0 0 / 25%);
+  --tf-shadow-md: 0 8px 24px -6px rgb(0 0 0 / 50%), 0 2px 6px rgb(0 0 0 / 30%);
+  --tf-shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 60%), 0 4px 12px rgb(0 0 0 / 35%);
+}
