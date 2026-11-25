@@ -182,10 +182,6 @@
         ],
         source,
       ) +
-      filter('fileType', 'Loại tệp', [
-        ['', 'Tất cả loại'],
-        ...filesByType.map(([key, name]) => [key, name]),
-      ]) +
       '<span class="spacer"></span>' +
       tabs(
         'fileView',
@@ -196,6 +192,18 @@
         layout,
       ) +
       act('addFile|' + project.id, 'Tải lên', 'upload', 'btn primary') +
+      '</div>' +
+      '<div class="status-pills file-kinds" role="group" aria-label="Loại tệp">' +
+      [['', 'Tất cả loại', null, 'folder_open'], ...filesByType]
+        .map(([key, label, , glyph]) =>
+          act(
+            'view|fileType|' + key,
+            label,
+            glyph,
+            'status-pill' + ((type || '') === key ? ' is-selected' : ''),
+          ),
+        )
+        .join('') +
       '</div>' +
       (rows.length
         ? layout === 'grid'
@@ -842,10 +850,10 @@
       refresh('Đã hoàn thành công việc.');
       if (detail === 'detail') taskDetail(id);
     },
-    reopenTask: (id) => {
+    reopenTask: (id, mode) => {
       MockApi.moveTask(id, 'InProgress');
       refresh('Đã mở lại công việc.');
-      taskDetail(id);
+      if (mode !== 'inline') taskDetail(id);
     },
     taskCheck: (id, checkId) => {
       MockApi.taskCheck(id, checkId);

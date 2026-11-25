@@ -321,6 +321,12 @@
         'assignment_ind',
         'indigo',
       ),
+      stat(
+        'Quản lý đã đánh giá',
+        rows.filter((row) => row.managerScore != null).length,
+        'assignment_turned_in',
+        'indigo',
+      ),
       stat('Đã chốt', finals.length, 'task_alt', 'emerald'),
       stat('Điểm trung bình', avg, 'insights', 'amber'),
     ]);
@@ -359,6 +365,7 @@
   function performanceDashboard(data) {
     const rows = dashboardRows(data);
     const ratings = ['Xuất sắc', 'Tốt', 'Đạt', 'Cần cải thiện', 'Không đạt'];
+    const finals = rows.filter((row) => row.status === 'Finalized');
     return (
       '<div class="toolbar">' +
       filter('reviewDashCycle', 'Kỳ đánh giá', [['', 'Tất cả kỳ'], ...D.options(data.cycles)]) +
@@ -366,6 +373,7 @@
         ['', 'Tất cả phòng ban'],
         ...D.options(data.departments),
       ]) +
+      '<span class="spacer"></span>' +
       act('performanceExport', 'Xuất CSV', 'download') +
       '</div>' +
       summaryStats(rows) +
@@ -379,12 +387,13 @@
                   row.status === 'Finalized' && rating(row.finalScore ?? row.managerScore) === name,
               ).length;
               return (
-                '<div class="item-line"><span class="stack">' +
+                '<div class="rating-row"><span>' +
                 h(name) +
-                '</span><strong>' +
+                '</span>' +
+                bar(finals.length ? (count * 100) / finals.length : 0, '#10b981') +
+                '<strong>' +
                 count +
                 '</strong>' +
-                bar(rows.length ? (count * 100) / rows.length : 0) +
                 '</div>'
               );
             })
@@ -858,39 +867,70 @@
       ]),
     ].sort();
     const total = (entries) => entries.reduce((sum, row) => sum + (row.cost || row.amount || 0), 0);
-    const max = Math.max(
-      1,
-      ...months.map(
-        (month) =>
-          total(costs.filter((row) => row.workDate.startsWith(month))) +
-          total(expenses.filter((row) => row.date.startsWith(month))),
-      ),
-    );
+    let cumulative = 0;
+    const totals = months.map((month) => {
+      const labor = total(costs.filter((row) => row.workDate.startsWith(month)));
+      const other = total(expenses.filter((row) => row.date.startsWith(month)));
+      cumulative += labor + other;
+      return { month, labor, other, cumulative };
+    });
+    const max = Math.max(1, project.budget || 0, cumulative) * 1.1;
+    const percent = (value) => Math.round((value * 1000) / max) / 10;
+    const chart = totals.length
+      ? '<div class="budget-chart">' +
+        (project.budget
+          ? '<div class="budget-chart-limit" style="bottom:' +
+            percent(project.budget) +
+            '%"><span>Ngân sách ' +
+            h(money(project.budget)) +
+            '</span></div>'
+          : '') +
+        totals
+          .map(({ month, labor, other, cumulative }, index) => {
+            const label = month.slice(5) + '/' + month.slice(0, 4);
+            const previous = totals[index - 1];
+            return (
+              '<div class="budget-chart-month" title="' +
+              h(
+                label +
+                  ' · Nhân công ' +
+                  money(labor) +
+                  ' · Chi phí khác ' +
+                  money(other) +
+                  ' · Lũy kế ' +
+                  money(cumulative),
+              ) +
+              '"><span class="budget-chart-bar"><i style="height:' +
+              percent(labor) +
+              '%"></i><i style="height:' +
+              percent(other) +
+              '%"></i></span>' +
+              (previous
+                ? '<span class="budget-chart-line" aria-hidden="true" style="--start:' +
+                  percent(previous.cumulative) +
+                  ';--end:' +
+                  percent(cumulative) +
+                  '"></span>'
+                : '') +
+              '<span class="budget-chart-point" style="bottom:' +
+              percent(cumulative) +
+              '%"></span>' +
+              '<small>' +
+              h(label) +
+              '</small></div>'
+            );
+          })
+          .join('') +
+        '</div>' +
+        '<div class="budget-legend budget-legend--items"><span>Nhân công</span><span>Chi phí khác</span><span>Lũy kế</span></div>'
+      : '<p class="muted">Chưa phát sinh chi phí.</p>';
     const top = data.tasks
       .filter((row) => row.projectId === project.id)
       .map((task) => [task, total(costs.filter((log) => log.taskId === task.id))])
       .filter(([, amount]) => amount > 0)
       .sort((a, b) => b[1] - a[1]);
     return (
-      panel(
-        '<h2>Chi phí theo tháng</h2>' +
-          (months
-            .map((month) => {
-              const spent =
-                total(costs.filter((row) => row.workDate.startsWith(month))) +
-                total(expenses.filter((row) => row.date.startsWith(month)));
-              return (
-                '<div class="item-line"><span class="stack">' +
-                h(month) +
-                '</span><strong>' +
-                h(money(spent)) +
-                '</strong>' +
-                bar((spent / max) * 100) +
-                '</div>'
-              );
-            })
-            .join('') || '<p class="muted">Chưa phát sinh chi phí.</p>'),
-      ) +
+      panel('<h2>' + icon('show_chart') + 'Chi phí theo tháng</h2>' + chart, 'budget-monthly') +
       panel(
         '<h2>Công việc tốn chi phí</h2>' +
           table(
@@ -1332,29 +1372,46 @@
             effectiveRows(data, today()).find((row) => row.kind === 'level' && row.ref === value)
               ?.amount || 0,
           ]);
-    const current = rows.filter((row) => row.start <= today() && (!row.end || row.end >= today()));
+    const levelRates = effectiveRows(data, today()).filter((row) => row.kind === 'level');
     return (
       header(
         'Đơn giá nhân sự',
         'Đơn giá theo người hoặc theo cấp bậc, có hiệu lực theo ngày làm việc.',
-        act('rateRecalculate', 'Tính lại', 'calculate') +
+        link('budgets', 'Ngân sách dự án', 'account_balance_wallet') +
           act('setRate', 'Thêm đơn giá', 'add', 'btn primary'),
       ) +
-      stats([
-        stat(
-          'Theo cấp bậc',
-          rateRows(data).filter((row) => row.kind === 'level').length,
-          'badge',
-          'indigo',
-        ),
-        stat(
-          'Theo người',
-          rateRows(data).filter((row) => row.kind === 'person').length,
-          'person',
-          'emerald',
-        ),
-        stat('Hiệu lực hôm nay', current.length, 'event_available', 'indigo'),
-      ]) +
+      '<div class="rate-levels">' +
+      levels
+        .map((level) => {
+          const rate = levelRates.find((row) => row.ref === level);
+          return (
+            '<button type="button" class="rate-level" data-act="setRate|' +
+            h(level) +
+            '"><span>' +
+            h(level) +
+            '</span><strong>' +
+            h(rate ? money(rate.amount) : 'Chưa đặt') +
+            '</strong><small>' +
+            (rate ? 'mỗi giờ' : 'Chưa có đơn giá cấp bậc') +
+            '</small><span class="rate-edit">' +
+            icon('edit') +
+            'Thay đổi</span></button>'
+          );
+        })
+        .join('') +
+      '</div>' +
+      panel(
+        '<div><h2>' +
+          icon('calculate') +
+          'Tính lại chi phí nhân công</h2>' +
+          '<p class="muted">Cập nhật chi phí giờ đã duyệt trong khoảng ngày được chọn.</p></div>' +
+          '<div class="row-actions">' +
+          field('Từ ngày', 'recalcStart', shift(today(), -30), { type: 'date', required: true }) +
+          field('Đến ngày', 'recalcEnd', today(), { type: 'date', required: true }) +
+          act('rateRecalculate', 'Tính lại', 'refresh') +
+          '</div>',
+        'rate-recalc',
+      ) +
       '<div class="toolbar">' +
       tabs(
         'rateKind',
@@ -1370,7 +1427,7 @@
         table(
           [kind === 'person' ? 'Nhân viên' : 'Cấp bậc', 'Đơn giá / giờ', 'Đơn giá theo ngày', ''],
           config.map(([id, name, rate]) => [
-            h(name),
+            kind === 'person' ? D.accountCell(data, id) : h(name),
             h(money(rate)),
             rows
               .filter((row) => row.ref === id)
@@ -1393,10 +1450,11 @@
   }
   function rateForm(id, rowId) {
     const data = snapshot();
+    const target = typeof id === 'string' ? id : '';
     const old = byId({ rates: rateRows(data) }, 'rates', rowId);
     const kind =
       old?.kind ||
-      (levels.includes(id) ? 'level' : str(id) ? 'person' : state.view.rateKind || 'person');
+      (levels.includes(target) ? 'level' : target ? 'person' : state.view.rateKind || 'person');
     show(
       old ? 'Sửa đơn giá' : 'Thêm đơn giá',
       field('Áp dụng cho', 'kind', kind, {
@@ -1453,12 +1511,10 @@
         kind === 'level'
           ? levels.map((value) => [value, value])
           : data.employees.map((row) => [row.id, row.fullName]);
-      ref.innerHTML = field(
-        kind === 'level' ? 'Cấp bậc' : 'Nhân viên',
-        'ref',
-        old?.ref || str(id),
-        { options: [['', 'Chọn…'], ...options], required: true },
-      );
+      ref.innerHTML = field(kind === 'level' ? 'Cấp bậc' : 'Nhân viên', 'ref', old?.ref || target, {
+        options: [['', 'Chọn…'], ...options],
+        required: true,
+      });
     }
     D.dialog.querySelector('[name=kind]').onchange = (event) => update(event.target.value);
     update(kind);
@@ -1596,8 +1652,18 @@
       show(
         'Tính lại chi phí nhân công',
         '<p>Chỉ tính lại các giờ đã duyệt trong khoảng được chọn.</p><div class="field-grid">' +
-          field('Từ ngày', 'start', shift(today(), -30), { type: 'date', required: true }) +
-          field('Đến ngày', 'end', today(), { type: 'date', required: true }) +
+          field(
+            'Từ ngày',
+            'start',
+            document.querySelector('.rate-recalc [name=recalcStart]')?.value || shift(today(), -30),
+            { type: 'date', required: true },
+          ) +
+          field(
+            'Đến ngày',
+            'end',
+            document.querySelector('.rate-recalc [name=recalcEnd]')?.value || today(),
+            { type: 'date', required: true },
+          ) +
           '</div>',
         {
           glyph: 'calculate',

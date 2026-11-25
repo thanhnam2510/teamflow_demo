@@ -59,8 +59,13 @@ window.MockApi = (() => {
   function statusTask(task, status) {
     const wasDone = task.status === 'Done';
     task.status = enumValue(status, statuses);
-    if (status === 'Done') task.progress = 100;
-    else if (wasDone) task.progress = Math.min(task.progress, 90);
+    if (status === 'Done') {
+      task.progress = 100;
+      if (!wasDone) task.completedAt = today();
+    } else if (wasDone) {
+      task.progress = Math.min(task.progress, 90);
+      delete task.completedAt;
+    }
   }
   function taskSave(data, values, keyId) {
     const project = get(data, 'projects', values.projectId);

@@ -394,22 +394,35 @@
     );
   }
   const projectTile = (data, project) => {
-    const tasks = data.tasks.filter((row) => row.projectId === project.id);
+    const owner = person(
+      data,
+      project.creatorId || byId(data, 'workspaces', project.workspaceId)?.ownerId,
+    );
     return rawLink(
       'projects/' + project.id,
-      '<div class="person-cell">' +
-        avatar(project.key, 'lg', project.color, true) +
-        '<div><strong>' +
-        h(project.name) +
-        '</strong><small>' +
+      '<span class="project__stripe" style="background:' +
+        h(project.color) +
+        '"></span><div class="project__top">' +
+        '<span class="project__key" style="background:' +
+        h(project.color) +
+        '">' +
         h(project.key) +
-        ' · ' +
-        tasks.length +
-        ' công việc</small></div></div><p class="muted">' +
+        '</span>' +
+        icon('arrow_forward', 'project__arrow') +
+        '</div>' +
+        '<h3>' +
+        h(project.name) +
+        '</h3><p class="project__description">' +
         h(project.description) +
-        '</p>' +
-        bar(progressOf(tasks), project.color),
-      'surface card-link',
+        '</p><div class="project__meta">' +
+        '<span>' +
+        icon('person') +
+        h(owner?.fullName || '—') +
+        '</span><span>' +
+        icon('calendar_today') +
+        fmtDate(project.createdAt) +
+        '</span></div>',
+      'project',
     );
   };
   function workspaceDetail(data, id) {
@@ -418,53 +431,85 @@
       return header('Không tìm thấy workspace', '', link('workspaces', 'Tất cả workspace'));
     const projects = data.projects.filter((row) => row.workspaceId === id);
     const tab = state.view.workspaceTab || 'projects';
-    return (
-      crumbs([
-        ['workspaces', 'Workspace'],
-        [null, item.name],
-      ]) +
-      hero(
-        data,
-        item,
-        chip(item.memberIds.length + ' thành viên') + chip(projects.length + ' dự án'),
-        D.workspaceButtons(data, item),
-      ) +
-      '<div class="toolbar">' +
-      tabs(
-        'workspaceTab',
-        [
-          ['projects', raw('workspaces.detail.projectsTab'), 'folder_open'],
-          ['members', raw('workspaces.detail.membersTab'), 'group'],
-        ],
-        tab,
-      ) +
-      '<span class="spacer"></span>' +
-      (tab === 'projects'
-        ? act('projectForm|' + id, 'Tạo dự án', 'add', 'btn primary')
-        : act('addMember|' + id, 'Thêm thành viên', 'person_add', 'btn primary')) +
-      '</div>' +
-      (tab === 'projects'
-        ? projects.length
-          ? '<div class="card-grid">' +
-            projects.map((row) => projectTile(data, row)).join('') +
-            '</div>'
-          : panel(placeholder('Workspace chưa có dự án.', 'folder_open'))
-        : panel(
-            table(
-              ['Thành viên', 'Chức danh', 'Vai trò'],
-              item.memberIds.map((memberId) => {
-                const member = person(data, memberId);
-                return [
-                  '<span class="person-cell">' +
-                    avatar(member.fullName, 'sm') +
-                    act('employee|' + member.id, member.fullName, '', 'plain-button') +
-                    '</span>',
-                  h(member.jobTitle),
-                  D.workspaceMemberControls(data, item, member),
-                ];
-              }),
-            ),
-          ))
+    const role = D.roleOf(item, data.currentUserId);
+    const members = item.memberIds.map((id) => person(data, id)).filter(Boolean);
+    const projectTab = tab === 'projects';
+    const sectionTitle = raw(
+      projectTab ? 'workspaces.detail.projectsTab' : 'workspaces.detail.membersTab',
+    );
+    const sectionActions = projectTab
+      ? act('projectForm|' + id, 'Tạo dự án', 'add', 'btn primary')
+      : ['Admin', 'Owner'].includes(role)
+        ? act('addMember|' + id, 'Thêm thành viên', 'person_add', 'btn primary')
+        : '';
+    const entries = projectTab
+      ? projects.map((row) => projectTile(data, row)).join('')
+      : members
+          .map(
+            (member) =>
+              '<div class="workspace-member"><div class="person-cell">' +
+              avatar(member.fullName, 'sm') +
+              '<div>' +
+              act('employee|' + member.id, member.fullName, '', 'plain-button') +
+              '<small>' +
+              h(member.jobTitle || member.email) +
+              '</small></div></div>' +
+              D.workspaceMemberControls(data, item, member) +
+              '</div>',
+          )
+          .join('');
+    return wrap(
+      link('workspaces', 'Tất cả workspace', 'arrow_back', 'back') +
+        '<section class="hero"><span class="hero__glow" aria-hidden="true"></span>' +
+        avatar(item.name, 'lg', '#6366f1', true) +
+        '<div class="hero__body"><div class="hero__title"><h1>' +
+        h(item.name) +
+        '</h1><span class="role' +
+        (role === 'Owner' ? ' role--owner' : '') +
+        '">' +
+        icon('group') +
+        h(role === 'Owner' ? 'Chủ sở hữu' : role === 'Member' ? 'Thành viên' : role) +
+        '</span></div><p class="hero__description">' +
+        h(item.description || raw('common.noDescription')) +
+        '</p><div class="hero__meta"><span>' +
+        icon('group') +
+        members.length +
+        ' thành viên</span><span>' +
+        icon('folder_open') +
+        projects.length +
+        ' dự án</span><span>' +
+        icon('calendar_today') +
+        'Tạo ngày ' +
+        fmtDate(item.createdAt) +
+        '</span></div></div><div class="hero__actions">' +
+        D.workspaceButtons(data, item) +
+        '</div></section>' +
+        tabs(
+          'workspaceTab',
+          [
+            ['projects', raw('workspaces.detail.projectsTab'), 'folder_open', projects.length],
+            ['members', raw('workspaces.detail.membersTab'), 'group', members.length],
+          ],
+          tab,
+        ) +
+        '<div class="workspace-projects-reference"><section class="panel"><div class="panel__header"><div><h2>' +
+        h(sectionTitle) +
+        '</h2><p>' +
+        h(
+          projectTab
+            ? 'Mọi thành viên đều có thể tạo dự án. Owner, Admin, Manager và người tạo được sửa/xóa.'
+            : 'Mời đồng nghiệp tham gia và quản lý vai trò trong workspace.',
+        ) +
+        '</p></div>' +
+        sectionActions +
+        '</div>' +
+        (entries
+          ? '<div class="' + (projectTab ? 'grid' : 'member-list') + '">' + entries + '</div>'
+          : placeholder(
+              projectTab ? 'Workspace chưa có dự án.' : 'Workspace chưa có thành viên.',
+            )) +
+        '</section></div>',
+      'workspace-reference',
     );
   }
   function workspaceForm(id) {
@@ -653,7 +698,7 @@
             ])
           : [];
       area =
-        '<div class="toolbar">' +
+        '<div class="toolbar project-task-toolbar">' +
         tabs(
           'taskMode',
           [
@@ -665,14 +710,14 @@
         searchField('taskQuery', raw('tasks.search')) +
         '<span class="spacer"></span>' +
         act('newTask|' + id + '|Todo', raw('tasks.add'), 'add', 'btn primary') +
-        '</div><div class="toolbar">' +
+        '<div class="status-pills">' +
         tax
           .map(([status, label, glyph]) =>
             act(
               'taskStatus|' + status,
               label,
               glyph,
-              'btn sm' + (state.view.taskStatus === status ? ' selected' : ''),
+              'status-pill' + (state.view.taskStatus === status ? ' is-selected' : ''),
             ),
           )
           .join('') +
@@ -680,12 +725,12 @@
           'taskMine',
           raw('tasks.mine'),
           'person',
-          'btn sm' + (state.view.taskMine ? ' selected' : ''),
+          'status-pill' + (state.view.taskMine ? ' is-selected' : ''),
         ) +
         (state.view.taskMine || state.view.taskStatus || state.view.taskQuery
           ? act('taskClear', 'Bỏ lọc', 'close', 'btn sm')
           : '') +
-        '</div>' +
+        '</div></div>' +
         (mode === 'board' ? board(data, item, rows) : taskList(data, id, rows));
     }
     const sections = [
@@ -792,37 +837,67 @@
   const monthName = (date) => fmtDate(date, { month: 'long', year: 'numeric' });
   const datesBetween = (start, count) =>
     Array.from({ length: count }, (_, index) => shift(start, index));
-  function dayGrid(data, date, type, rows, itemDate, renderItem, createAction) {
-    const month = monthStep(date, 0);
-    const first = type === 'week' ? monday(date) : monday(month);
-    const days = datesBetween(first, type === 'week' ? 7 : 42);
-    const weekLabels = datesBetween('2025-06-02', 7).map((day) =>
-      fmtDate(day, { weekday: 'short' }),
-    );
+  function calendarMonth(data, date) {
+    const month = date.slice(0, 7);
+    const first = monday(month + '-01');
+    const days = datesBetween(first, 42);
+    const labels =
+      state.lang === 'vi'
+        ? ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
+        : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return (
-      '<div class="calendar-scroll"><div class="calendar-grid ' +
-      (type === 'week' ? 'calendar-week' : '') +
-      '">' +
-      weekLabels.map((label) => '<div class="calendar-label">' + h(label) + '</div>').join('') +
+      '<div class="calendar-scroll calendar-month-reference"><div class="month"><div class="month__head">' +
+      labels.map((label) => '<span>' + label + '</span>').join('') +
+      '</div><div class="month__grid">' +
       days
-        .map(
-          (day) =>
-            '<div class="calendar-day' +
-            (day === today() ? ' today' : '') +
-            (type !== 'week' && day.slice(0, 7) !== month.slice(0, 7) ? ' outside' : '') +
-            '"><div class="calendar-date"><strong>' +
-            Number(day.slice(8)) +
-            '</strong>' +
-            act(createAction + '|' + day, '', 'add', 'btn text sm') +
-            '</div>' +
-            rows
-              .filter((item) => itemDate(item) === day)
-              .map(renderItem)
+        .map((day, index) => {
+          const meetings = data.meetings
+            .filter((row) => row.startAt.slice(0, 10) === day)
+            .sort((a, b) => a.startAt.localeCompare(b.startAt));
+          return (
+            '<div class="cell' +
+            (day === today() ? ' cell--today' : '') +
+            (day.startsWith(month) ? '' : ' cell--outside') +
+            '" data-calendar-day="' +
+            day +
+            '" style="--i:' +
+            index +
+            '"><button type="button" class="cell__date" data-act="meetingForm|' +
+            day +
+            '" aria-label="Đặt lịch ngày ' +
+            h(fmtDate(day)) +
+            '">' +
+            Number(day.slice(-2)) +
+            '</button>' +
+            meetings
+              .slice(0, 3)
+              .map((row) => {
+                const color = byId(data, 'projects', row.projectId)?.color || '#6366f1';
+                return (
+                  '<button type="button" class="pill pill--' +
+                  h(row.response) +
+                  '" data-act="meeting|' +
+                  h(row.id) +
+                  '" title="' +
+                  h(row.title) +
+                  '"><span class="pill__dot" style="background:' +
+                  h(color) +
+                  '"></span><small class="pill__time">' +
+                  h(time(row.startAt)) +
+                  '</small><span class="pill__name">' +
+                  h(row.title) +
+                  '</span></button>'
+                );
+              })
               .join('') +
-            '</div>',
-        )
+            (meetings.length > 3
+              ? act('calendarDay|' + day, '+ ' + (meetings.length - 3) + ' cuộc họp', '', 'more')
+              : '') +
+            '</div>'
+          );
+        })
         .join('') +
-      '</div></div>'
+      '</div></div></div>'
     );
   }
   const hourHeight = 48;
@@ -1040,18 +1115,7 @@
         mode,
       ) +
       '</div>';
-    const calendarBody =
-      mode === 'week'
-        ? calendarWeek(data, date)
-        : dayGrid(
-            data,
-            date,
-            mode,
-            data.meetings,
-            (row) => row.startAt.slice(0, 10),
-            (row) => act('meeting|' + row.id, time(row.startAt) + ' ' + row.title, '', 'cal-entry'),
-            'meetingForm',
-          );
+    const calendarBody = mode === 'week' ? calendarWeek(data, date) : calendarMonth(data, date);
     return (
       header(
         raw('calendar.title'),
@@ -1389,25 +1453,202 @@
           duration +
           '">' +
           lines +
+          (dates.includes(today())
+            ? '<span class="gantt-now" aria-hidden="true" style="grid-column:' +
+              (dates.indexOf(today()) + 2) +
+              ';grid-row:2/' +
+              (line + 1) +
+              '"></span>'
+            : '') +
           '</div></div>'
         : panel(placeholder('Chưa có dự án.', 'view_timeline')))
     );
   }
 
   function myWork(data) {
-    const rows = data.tasks.filter(
-      (task) =>
-        task.assigneeId === data.currentUserId &&
-        (!state.view.mineProject || task.projectId === state.view.mineProject) &&
-        matches(state.view.mineQuery, task.title, task.code),
+    const scope = state.view.mineScope || 'assigned';
+    const day = today();
+    const upcoming = shift(day, 7);
+    const projects = data.projects.filter((project) =>
+      byId(data, 'workspaces', project.workspaceId)?.memberIds.includes(data.currentUserId),
     );
-    return (
-      header(raw('myWork.title'), raw('myWork.subtitle')) +
-      '<div class="toolbar">' +
-      searchField('mineQuery', raw('myWork.search')) +
-      filter('mineProject', 'Dự án', [['', raw('myWork.allProjects')], ...options(data.projects)]) +
-      '</div>' +
-      taskList(data, '', rows)
+    const projectMap = new Map(projects.map((project) => [project.id, project]));
+    const workspaceRows = data.workspaces.filter((row) =>
+      row.memberIds.includes(data.currentUserId),
+    );
+    const rows = data.tasks.filter((task) => {
+      const project = projectMap.get(task.projectId);
+      if (!project) return false;
+      const owner =
+        task.creatorId ||
+        project.creatorId ||
+        byId(data, 'workspaces', project.workspaceId)?.ownerId;
+      return (
+        (scope === 'created'
+          ? owner === data.currentUserId
+          : task.assigneeId === data.currentUserId) &&
+        (!state.view.mineWorkspace || project.workspaceId === state.view.mineWorkspace) &&
+        (!state.view.mineProject || task.projectId === state.view.mineProject) &&
+        matches(state.view.mineQuery, task.title, task.code)
+      );
+    });
+    const open = rows.filter((task) => task.status !== 'Done');
+    const groups = [
+      [
+        'overdue',
+        'Quá hạn',
+        'danger',
+        'warning',
+        open.filter((task) => task.dueDate && task.dueDate < day),
+      ],
+      ['today', 'Hôm nay', 'warn', 'today', open.filter((task) => task.dueDate === day)],
+      [
+        'week',
+        '7 ngày tới',
+        '',
+        'date_range',
+        open.filter((task) => task.dueDate > day && task.dueDate <= upcoming),
+      ],
+      ['later', 'Sau đó', '', '', open.filter((task) => task.dueDate > upcoming)],
+      ['none', 'Chưa có hạn', '', '', open.filter((task) => !task.dueDate)],
+      [
+        'done',
+        'Đã xong (14 ngày)',
+        'done',
+        'task_alt',
+        rows.filter(
+          (task) =>
+            task.status === 'Done' &&
+            (task.completedAt || task.history?.at(-1)?.date || task.dueDate || day) >=
+              shift(day, -14),
+        ),
+      ],
+    ];
+    const cards = groups
+      .filter(([, , , glyph]) => glyph)
+      .map(
+        ([name, label, , glyph, tasks]) =>
+          '<button type="button" class="stat stat--' +
+          name +
+          (state.view.mineFocus === name ? ' stat--on' : '') +
+          '" data-act="mineFocus|' +
+          name +
+          '" aria-pressed="' +
+          (state.view.mineFocus === name) +
+          '">' +
+          icon(glyph) +
+          '<span class="stat__value">' +
+          tasks.length +
+          '</span><span class="stat__label">' +
+          h(label) +
+          '</span></button>',
+      )
+      .join('');
+    const grouped = groups
+      .filter(
+        ([key, , , , tasks]) =>
+          tasks.length && (!state.view.mineFocus || state.view.mineFocus === key),
+      )
+      .map(
+        ([, label, tone, , tasks]) =>
+          '<section class="group"><h2 class="group__title group__title--' +
+          tone +
+          '">' +
+          h(label) +
+          '<span>' +
+          tasks.length +
+          '</span></h2><ul>' +
+          tasks
+            .map((task) => {
+              const project = projectMap.get(task.projectId);
+              const ws = byId(data, 'workspaces', project.workspaceId);
+              const logs = data.worklogs
+                .filter((row) => row.taskId === task.id && row.status !== 'Rejected')
+                .reduce((sum, row) => sum + row.minutes, 0);
+              const done = task.status === 'Done';
+              return (
+                '<li><div class="task' +
+                (done ? ' task--done' : '') +
+                '">' +
+                iconBtn(
+                  done ? 'reopenTask|' + task.id + '|inline' : 'completeTask|' + task.id,
+                  done ? 'Mở lại công việc' : 'Đánh dấu hoàn thành',
+                  'check',
+                  'check' + (done ? ' check--on' : ''),
+                ) +
+                icon(statusIcons[task.status], 'task__status status--' + task.status) +
+                '<button type="button" class="task__main" data-act="task|' +
+                h(task.id) +
+                '"><span class="task__title">' +
+                h(task.title) +
+                '</span><span class="task__meta"><span class="code">' +
+                h(task.code) +
+                '</span><span class="project"><i style="background:' +
+                h(project.color) +
+                '"></i>' +
+                h(project.name) +
+                '</span><span class="workspace">' +
+                h(ws?.name) +
+                '</span></span></button>' +
+                '<span class="mine-assignee">' +
+                (scope === 'created' ? taskAvatar(data, task) : '') +
+                '</span>' +
+                (logs || task.estimateHours
+                  ? '<span class="time' +
+                    (task.estimateHours && logs > task.estimateHours * 60 ? ' time--over' : '') +
+                    '">' +
+                    h(hours(logs) + (task.estimateHours ? ' / ' + task.estimateHours + 'h' : '')) +
+                    '</span>'
+                  : '<span class="time"></span>') +
+                '<button type="button" class="pill" data-act="taskProgress|' +
+                h(task.id) +
+                '" style="--p:' +
+                task.progress +
+                '%" aria-label="Cập nhật tiến độ">' +
+                task.progress +
+                '%</button>' +
+                icon(priorityIcons[task.priority], 'task__priority priority--' + task.priority) +
+                (due(task, tone === 'danger' ? 'overdue' : tone === 'warn' ? 'today' : 'calm') ||
+                  '<span class="due">—</span>') +
+                '</div></li>'
+              );
+            })
+            .join('') +
+          '</ul></section>',
+      )
+      .join('');
+    return wrap(
+      header(
+        raw('myWork.title'),
+        raw('myWork.subtitle'),
+        tabs(
+          'mineScope',
+          [
+            ['assigned', 'Được giao cho tôi', 'assignment_ind'],
+            ['created', 'Tôi tạo', 'edit_note'],
+          ],
+          scope,
+        ),
+      ) +
+        '<div class="stats">' +
+        cards +
+        '</div><div class="toolbar">' +
+        searchField('mineQuery', raw('myWork.search')) +
+        filter('mineWorkspace', 'Workspace', [['', 'Workspace'], ...options(workspaceRows)]) +
+        filter('mineProject', 'Dự án', [
+          ['', 'Dự án'],
+          ...options(
+            projects.filter(
+              (project) =>
+                !state.view.mineWorkspace || project.workspaceId === state.view.mineWorkspace,
+            ),
+          ),
+        ]) +
+        '<span class="spacer"></span><span class="total">' +
+        t('myWork.openCount', { count: open.length }) +
+        '</span></div>' +
+        (grouped || placeholder('Không có công việc phù hợp.', 'task_alt')),
+      'my-work-reference',
     );
   }
   function weekly(data) {
@@ -1612,10 +1853,15 @@
         },
         'Xóa',
       ),
+    calendarDay: (day) => {
+      state.view.calendarDate = day;
+      state.view.calendarMode = 'week';
+      render();
+    },
     calendarShift: (delta) => {
       const date = state.view.calendarDate || today();
       state.view.calendarDate =
-        state.view.calendarMode === 'month'
+        (state.view.calendarMode || DemoStorage.preference('calendarMode')) === 'month'
           ? monthStep(date, Number(delta))
           : shift(date, Number(delta) * 7);
       render();
@@ -1638,6 +1884,10 @@
         },
         'Hủy cuộc họp',
       ),
+    mineFocus: (key) => {
+      state.view.mineFocus = state.view.mineFocus === key ? '' : key;
+      render();
+    },
     ganttShift: (delta) => {
       state.view.ganttDate = shift(state.view.ganttDate || today(), Number(delta) * 7);
       render();
@@ -1733,6 +1983,11 @@
     }
   });
   document.addEventListener('click', (event) => {
+    const month = event.target.closest('[data-calendar-day]');
+    if (month && !event.target.closest('[data-act]')) {
+      meetingForm(month.dataset.calendarDay, '');
+      return;
+    }
     const day = event.target.closest('[data-meeting-day]');
     if (!day || event.target.closest('[data-act]')) return;
     const minutes = ((event.clientY - day.getBoundingClientRect().top) * 60) / hourHeight;
@@ -1747,7 +2002,6 @@
     options,
     shortDate,
     dateFields,
-    dayGrid,
     monthStep,
     monthName,
     taskList,

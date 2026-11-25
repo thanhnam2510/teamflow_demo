@@ -40,7 +40,6 @@
     render,
     go,
     today,
-    dayGrid,
     monthStep,
     monthName,
     empOptions,
@@ -176,8 +175,11 @@
     return row.status !== 'Pending'
       ? '<span class="muted">' + h(row.reason || '') + '</span>'
       : actionsRow(
-          act('approve|' + key + '|' + row.id, 'Duyệt', 'check', 'btn sm') +
-            act('reject|' + key + '|' + row.id, 'Từ chối', 'close', 'btn sm danger'),
+          state.route === 'worklogs'
+            ? iconBtn('approve|' + key + '|' + row.id, 'Duyệt', 'check', 'review-approve') +
+                iconBtn('reject|' + key + '|' + row.id, 'Từ chối', 'close', 'review-reject')
+            : act('approve|' + key + '|' + row.id, 'Duyệt', 'check', 'btn sm') +
+                act('reject|' + key + '|' + row.id, 'Từ chối', 'close', 'btn sm danger'),
         );
   }
   function logReview(data, date) {
@@ -309,10 +311,12 @@
     const period = D.datesBetween(date.slice(0, 7) + '-01', 31).filter((day) =>
       day.startsWith(date.slice(0, 7)),
     );
-    const values = period.map((day) =>
-      sumMinutes(rows.filter((row) => row.workDate === day && row.status !== 'Rejected')),
+    const daily = period.map((day) =>
+      ['Approved', 'Pending'].map((status) =>
+        sumMinutes(rows.filter((row) => row.workDate === day && row.status === status)),
+      ),
     );
-    const ceiling = Math.max(1, ...values);
+    const ceiling = Math.max(1, ...daily.map(([approved, pending]) => approved + pending));
     return (
       '<div class="toolbar">' +
       filter('reportScope', 'Phạm vi', [
@@ -339,15 +343,22 @@
         ),
       ) +
       panel(
-        '<h2>Theo ngày</h2><div class="report-axis">' +
-          values
+        '<div class="report-chart-head"><h2>Theo ngày</h2><div class="report-legend">' +
+          '<span>' +
+          t('worklogs.status.Approved') +
+          '</span><span>' +
+          t('worklogs.status.Pending') +
+          '</span></div></div><div class="report-axis">' +
+          daily
             .map(
-              (value, i) =>
+              ([approved, pending], i) =>
                 '<div title="' +
-                h(fmtDate(period[i]) + ' · ' + hours(value)) +
-                '"><span style="height:' +
-                Math.round((value * 100) / ceiling) +
-                '%"></span><small>' +
+                h(fmtDate(period[i]) + ' · ' + hours(approved + pending)) +
+                '"><div class="report-day-stack"><i style="height:' +
+                (approved * 100) / ceiling +
+                '%"></i><i style="height:' +
+                (pending * 100) / ceiling +
+                '%"></i></div><small>' +
                 (i + 1) +
                 '</small></div>',
             )
@@ -369,6 +380,110 @@
         (id) => accountCell(data, id),
         'userId',
       )
+    );
+  }
+  function worklogMonth(data, date) {
+    const month = date.slice(0, 7);
+    const first = D.monday(month + '-01');
+    const dates = D.datesBetween(first, 42);
+    const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    const logs = data.worklogs.filter(
+      (row) =>
+        row.userId === data.currentUserId && row.workDate >= first && row.workDate <= dates.at(-1),
+    );
+    const weeks = Array.from({ length: 6 }, (_, i) => dates.slice(i * 7, i * 7 + 7));
+    const renderLog = (log) => {
+      const task = lookupTask(data, log.taskId);
+      const project = byId(data, 'projects', task?.projectId);
+      return (
+        '<button type="button" class="pill pill--' +
+        h(log.status) +
+        '" data-act="logDetail|' +
+        h(log.id) +
+        '" title="' +
+        h(task?.title || '') +
+        '"><span class="pill__bar" style="background:' +
+        h(project?.color || '#6366f1') +
+        '"></span><span class="pill__code">' +
+        h(task?.code || '—') +
+        '</span><span class="pill__time">' +
+        h(hours(log.minutes)) +
+        '</span></button>'
+      );
+    };
+    return (
+      '<div class="worklog-month-reference"><div class="month"><div class="month__head">' +
+      days.map((day) => '<span>' + day + '</span>').join('') +
+      '<span class="month__total-head">Tuần</span></div>' +
+      weeks
+        .map((week, index) => {
+          const items = logs.filter((row) => week.includes(row.workDate));
+          const total = sumMinutes(items.filter((row) => row.status !== 'Rejected'));
+          return (
+            '<div class="week">' +
+            week
+              .map((day, col) => {
+                const current = items.filter((row) => row.workDate === day);
+                const active = current.filter((row) => row.status !== 'Rejected');
+                const minutes = sumMinutes(active);
+                const pending = active.some((row) => row.status === 'Pending');
+                const expanded = state.view.expandedLogDay === day;
+                const classes = [
+                  'cell',
+                  day === today() && 'cell--today',
+                  day > today() && 'cell--future',
+                  !day.startsWith(month) && 'cell--outside',
+                  expanded && 'cell--expanded',
+                ]
+                  .filter(Boolean)
+                  .join(' ');
+                return (
+                  '<div class="' +
+                  classes +
+                  '" style="--i:' +
+                  (index * 7 + col) +
+                  '"><div class="cell__top"><span class="cell__date">' +
+                  Number(day.slice(-2)) +
+                  '</span>' +
+                  (minutes
+                    ? '<span class="cell__sum' +
+                      (pending ? ' cell__sum--pending' : '') +
+                      '">' +
+                      h(hours(minutes)) +
+                      '</span>'
+                    : '') +
+                  (day <= today()
+                    ? '<button type="button" class="cell__add" data-act="logForm|' +
+                      day +
+                      '" aria-label="Log work ngày ' +
+                      h(day) +
+                      '">' +
+                      icon('add') +
+                      '</button>'
+                    : '') +
+                  '</div>' +
+                  (expanded ? current : current.slice(0, 3)).map(renderLog).join('') +
+                  (current.length > 3
+                    ? act(
+                        'toggleLogDay|' + day,
+                        expanded ? 'Thu gọn' : '+ ' + (current.length - 3) + ' log',
+                        '',
+                        'more',
+                      )
+                    : '') +
+                  '</div>'
+                );
+              })
+              .join('') +
+            '<div class="total' +
+            (total ? '' : ' total--empty') +
+            '"><strong>' +
+            h(hours(total).slice(0, -1)) +
+            '</strong><small>giờ</small></div></div>'
+          );
+        })
+        .join('') +
+      '</div></div>'
     );
   }
   function worklogs(data) {
@@ -409,21 +524,7 @@
           )
           .join('') +
         '</div>' +
-        dayGrid(
-          data,
-          date,
-          'month',
-          userLogs,
-          (row) => row.workDate,
-          (row) =>
-            act(
-              'logDetail|' + row.id,
-              hours(row.minutes) + ' · ' + (lookupTask(data, row.taskId)?.code || ''),
-              '',
-              'cal-entry ' + row.status.toLowerCase(),
-            ),
-          'logForm',
-        );
+        worklogMonth(data, date);
     return (
       header(
         raw('worklogs.title'),
@@ -548,6 +649,61 @@
     }
     return labels;
   }
+  const assetStatuses = ['Available', 'Assigned', 'InRepair', 'Disposed', 'Lost'];
+  const returnWarnings = ['Quá hạn trả', 'Người giữ bị khóa', 'Chờ xác nhận'];
+  const assetGlyph = (row) =>
+    ({ laptop: 'laptop_mac', display: 'monitor', phone: 'smartphone' })[row.categoryId] ||
+    'devices_other';
+  const assetLink = (row) =>
+    '<a class="asset-name" href="#/assets/' +
+    h(row.id) +
+    '">' +
+    '<span class="asset-symbol">' +
+    icon(assetGlyph(row)) +
+    '</span><span class="stack"><strong>' +
+    h(row.name) +
+    '</strong><small>' +
+    h(row.code) +
+    '</small></span></a>';
+  function assetAttention(data) {
+    const affected = data.assets.map((row) => ({ row, labels: assetWarnings(data, row) }));
+    const warningPanel = (title, glyph, tone, select) => {
+      const rows = affected
+        .map(({ row, labels }) => ({ row, labels: labels.filter(select) }))
+        .filter(({ labels }) => labels.length);
+      return panel(
+        '<h2>' +
+          icon(glyph) +
+          h(title) +
+          chip(rows.length, tone) +
+          '</h2>' +
+          (rows
+            .map(
+              ({ row, labels }) =>
+                '<div class="asset-warning-row">' +
+                assetLink(row) +
+                '<div class="row-actions">' +
+                labels.map((label) => chip(label, tone)).join('') +
+                '</div></div>',
+            )
+            .join('') || placeholder('Không có tài sản cần xử lý.', 'check_circle')),
+        'asset-warning-panel asset-warning-panel--' + tone,
+      );
+    };
+    return (
+      '<div class="split asset-warnings">' +
+      warningPanel(
+        'Cảnh báo bảo hành & bảo trì',
+        'notifications_active',
+        'amber',
+        (label) => !returnWarnings.includes(label),
+      ) +
+      warningPanel('Cần thu hồi / xác nhận', 'assignment_return', 'rose', (label) =>
+        returnWarnings.includes(label),
+      ) +
+      '</div>'
+    );
+  }
   function assets(data, id, auditId) {
     if (id === 'audits') return D.auditScreen(data, auditId);
     if (id) {
@@ -574,23 +730,42 @@
       '<div class="toolbar">' +
       tabs(
         'assetTab',
-        group.map(([key, glyph]) => [key, raw('assets.tabs.' + key), glyph]),
+        group.map(([key, glyph]) => [
+          key,
+          raw('assets.tabs.' + key),
+          glyph,
+          key === 'attention'
+            ? data.assets.filter((row) => assetWarnings(data, row).length).length
+            : 0,
+        ]),
         tab,
       ) +
       '</div>';
     let body;
     if (tab === 'categories') {
-      body = panel(
-        table(
-          ['Danh mục', 'Số tài sản', 'Chu kỳ bảo trì', ''],
-          data.categories.map((row) => [
-            h(row.name),
-            String(data.assets.filter((item) => item.categoryId === row.id).length),
-            row.intervalMonths ? h(row.intervalMonths + ' tháng') : '—',
-            iconBtn('categoryForm|' + row.id, 'Sửa danh mục', 'edit'),
-          ]),
-        ),
-      );
+      body =
+        '<div class="asset-categories">' +
+        data.categories
+          .map((row) =>
+            panel(
+              '<div class="asset-category-heading"><span class="asset-symbol">' +
+                icon('category') +
+                '</span><div class="stack"><strong>' +
+                h(row.name) +
+                '</strong><small>' +
+                data.assets.filter((item) => item.categoryId === row.id).length +
+                ' tài sản</small></div>' +
+                iconBtn('categoryForm|' + row.id, 'Sửa danh mục', 'edit') +
+                '</div><p class="muted">' +
+                icon('schedule') +
+                (row.intervalMonths
+                  ? h('Bảo trì mỗi ' + row.intervalMonths + ' tháng')
+                  : 'Chưa thiết lập chu kỳ bảo trì') +
+                '</p>',
+            ),
+          )
+          .join('') +
+        '</div>';
     } else if (tab === 'audits') {
       body = panel(
         table(
@@ -602,11 +777,13 @@
           ]),
           'Chưa có đợt kiểm kê.',
         ),
+        'reference-table',
       );
+    } else if (tab === 'attention') {
+      body = assetAttention(data);
     } else {
       const rows = data.assets.filter(
         (row) =>
-          (tab !== 'attention' || assetWarnings(data, row).length) &&
           (!state.view.assetStatus || row.status === state.view.assetStatus) &&
           (!state.view.assetCategory || row.categoryId === state.view.assetCategory) &&
           matches(
@@ -618,42 +795,57 @@
           ),
       );
       const page = paginate('assetPage', rows);
+      const statusChoices = [
+        ['all', 'Tất cả trạng thái'],
+        ...assetStatuses.map((status) => [status, raw('assets.status.' + status)]),
+      ];
       body =
-        '<div class="toolbar">' +
+        '<div class="toolbar asset-filters">' +
         searchField('assetQuery', raw('assets.search')) +
-        filter('assetStatus', 'Trạng thái', [
-          ['', 'Tất cả trạng thái'],
-          ...['Available', 'Assigned', 'InRepair', 'Disposed', 'Lost'].map((status) => [
-            status,
-            raw('assets.status.' + status),
-          ]),
-        ]) +
         filter('assetCategory', 'Danh mục', [
           ['', 'Tất cả danh mục'],
           ...options(data.categories),
         ]) +
-        '</div>' +
+        '<div class="status-pills" role="group" aria-label="Trạng thái tài sản">' +
+        statusChoices
+          .map(([status, label]) => {
+            const selected = (state.view.assetStatus || 'all') === status;
+            return (
+              '<button type="button" class="status-pill' +
+              (selected ? ' is-selected' : '') +
+              '" data-act="assetFilter|' +
+              h(status) +
+              '" aria-pressed="' +
+              selected +
+              '">' +
+              h(label) +
+              '</button>'
+            );
+          })
+          .join('') +
+        '</div></div>' +
         panel(
           table(
-            ['Mã tài sản', 'Tên tài sản', 'Danh mục', 'Trạng thái', 'Người đang giữ', 'Giá mua'],
+            [
+              'Tài sản',
+              'Danh mục',
+              'Serial',
+              'Người đang giữ',
+              'Trạng thái',
+              'Bảo hành đến',
+              'Giá mua',
+            ],
             page.rows.map((row) => [
-              link('assets/' + row.id, row.code, '', 'plain-button'),
-              '<span class="stack"><strong>' +
-                h(row.name) +
-                '</strong><small>' +
-                h(row.serial) +
-                '</small></span>' +
-                (tab === 'attention'
-                  ? assetWarnings(data, row)
-                      .map((label) => chip(label, 'amber'))
-                      .join(' ')
-                  : ''),
-              h(byId(data, 'categories', row.categoryId)?.name),
+              assetLink(row),
+              h(byId(data, 'categories', row.categoryId)?.name || '—'),
+              '<span class="asset-serial">' + h(row.serial || '—') + '</span>',
+              row.holderId ? accountCell(data, row.holderId, false) : '—',
               statusTag('assets', row.status),
-              h(empName(data, row.holderId)),
+              fmtDate(row.warrantyUntil),
               h(money(row.price)),
             ]),
           ) + page.foot,
+          'reference-table asset-inventory',
         );
     }
     return (
@@ -691,73 +883,159 @@
     ]);
   }
   function assetPage(data, row) {
-    return (
-      crumbs([
-        ['assets', raw('assets.title')],
-        [null, row.code],
-      ]) +
-      header(
-        row.name,
-        row.code,
-        act('assetForm|' + row.id, raw('common.edit'), 'edit') +
-          (row.status === 'Available'
-            ? act('handover|' + row.id, 'Bàn giao', 'assignment_ind', 'btn primary')
-            : row.status === 'Assigned'
-              ? act('returnAsset|' + row.id, 'Thu hồi', 'assignment_return', 'btn primary')
+    const holder = person(data, row.holderId);
+    const category = byId(data, 'categories', row.categoryId);
+    const facts = [
+      ['Mã tài sản', '<span class="mono">' + h(row.code) + '</span>'],
+      ['Danh mục', h(category?.name || '—')],
+      ['Serial', '<span class="mono">' + h(row.serial || '—') + '</span>'],
+      ['Tình trạng', h(row.condition || 'Tốt')],
+      ['Vị trí', h(row.location || '—')],
+      ['Ngày mua', fmtDate(row.purchasedOn)],
+      ['Giá mua', h(money(row.price))],
+      ['Nhà cung cấp', h(row.supplier || '—')],
+      ['Bảo hành đến', fmtDate(row.warrantyUntil)],
+      ['Chu kỳ bảo trì', row.interval ? h(row.interval + ' ngày') : 'Theo danh mục'],
+    ];
+    const controls =
+      (row.status === 'Disposed' ? '' : act('assetForm|' + row.id, raw('common.edit'), 'edit')) +
+      (row.status === 'Available'
+        ? act('maintenanceForm|' + row.id, 'Lập lịch bảo trì', 'build') +
+          act('handover|' + row.id, 'Bàn giao', 'assignment_ind', 'btn primary')
+        : row.status === 'Assigned'
+          ? act('returnAsset|' + row.id, 'Thu hồi', 'assignment_return', 'btn primary')
+          : row.status === 'InRepair'
+            ? act(
+                'assetStatus|' + row.id + '|finish',
+                'Ghi nhận sửa xong',
+                'build_circle',
+                'btn primary',
+              )
+            : row.status === 'Lost'
+              ? act(
+                  'assetStatus|' + row.id + '|found',
+                  'Đã tìm thấy',
+                  'travel_explore',
+                  'btn primary',
+                )
               : '') +
-          D.assetDetailActions(data, row),
+      D.assetDetailActions(row);
+    const history = (row.history || []).slice().reverse();
+    return (
+      '<div class="asset-reference">' +
+      link('assets', raw('assets.title'), 'arrow_back', 'back') +
+      '<header class="page-header asset-header"><div class="head__title">' +
+      '<span class="head__icon">' +
+      icon(assetGlyph(row)) +
+      '</span><div><small class="head__code">' +
+      h(row.code) +
+      '</small><h1>' +
+      h(row.name) +
+      '</h1><div class="tags">' +
+      statusTag('assets', row.status) +
+      (category ? chip(category.name) : '') +
+      '</div></div></div><div class="row-actions">' +
+      controls +
+      '</div></header>' +
+      '<div class="layout"><div class="main">' +
+      panel(
+        '<h2>Đang giữ</h2>' +
+          (holder
+            ? '<div class="asset-holder">' +
+              accountCell(data, holder.id) +
+              chip(
+                row.confirmed ? 'Đã xác nhận' : 'Chờ xác nhận',
+                row.confirmed ? 'emerald' : 'amber',
+              ) +
+              '</div><p class="muted">Bàn giao ' +
+              fmtDate(row.assignedOn) +
+              ' · Hạn trả ' +
+              fmtDate(row.expectedReturnOn) +
+              '</p>'
+            : '<p class="muted">Chưa bàn giao cho nhân viên.</p>'),
       ) +
-      '<div class="split">' +
-      panel('<h2>' + t('assets.detail.info') + '</h2>' + assetInfo(data, row, true)) +
+      panel(
+        '<h2>' +
+          t('assets.detail.info') +
+          '</h2><dl class="facts">' +
+          facts
+            .map(([label, value]) => '<div><dt>' + h(label) + '</dt><dd>' + value + '</dd></div>')
+            .join('') +
+          '</dl>' +
+          (row.note ? '<p class="note">' + h(row.note) + '</p>' : ''),
+      ) +
+      D.assetMaintenancePanel(row) +
+      '</div><aside class="side">' +
+      D.assetQrPanel(row) +
       panel(
         '<h2>' +
           t('assets.detail.history') +
           '</h2>' +
-          (row.history
-            .map(
-              (event) =>
-                '<div class="item-line"><div class="stack"><strong>' +
-                h(event.text) +
-                '</strong><small>' +
-                fmtDate(event.date) +
-                '</small></div></div>',
-            )
-            .join('') || '<p class="muted">Chưa có lịch sử.</p>'),
+          (history.length
+            ? '<ol class="timeline">' +
+              history
+                .map(
+                  (event) =>
+                    '<li class="event"><span class="event__dot">' +
+                    icon('history') +
+                    '</span><div class="event__body"><strong>' +
+                    h(event.text) +
+                    '</strong><p class="muted">' +
+                    fmtDate(event.date) +
+                    '</p></div></li>',
+                )
+                .join('') +
+              '</ol>'
+            : '<p class="muted">Chưa có lịch sử.</p>'),
       ) +
-      '</div>' +
-      D.assetDetailPanels(data, row)
+      '</aside></div></div>'
     );
   }
   function myAssets(data) {
     const rows = data.assets.filter((row) => row.holderId === data.currentUserId);
-    return (
-      header(raw('nav.myAssets'), 'Tài sản bạn đang giữ và cần xác nhận đã nhận.') +
-      (rows.length
-        ? '<div class="card-grid">' +
-          rows
-            .map((row) =>
-              panel(
-                '<h2>' +
-                  h(row.name) +
-                  '</h2><p class="muted">' +
-                  h(row.code) +
-                  '</p>' +
-                  statusTag('assets', row.status) +
-                  actionsRow(
-                    act('asset|' + row.id, 'Xem chi tiết', 'devices', 'btn sm') +
-                      (!row.confirmed
-                        ? act(
-                            'confirmAsset|' + row.id,
-                            'Xác nhận đã nhận',
-                            'check',
-                            'btn sm primary',
-                          )
-                        : chip('Đã xác nhận', 'emerald')),
-                  ),
-              ),
-            )
+    const cards = rows.map((row) => {
+      const category = byId(data, 'categories', row.categoryId);
+      const facts = [
+        ['Số serial', h(row.serial || '—')],
+        ['Tình trạng', h(row.condition || 'Tốt')],
+        ['Ngày bàn giao', fmtDate(row.assignedOn)],
+        ['Hạn trả', row.expectedReturnOn ? fmtDate(row.expectedReturnOn) : 'Dùng lâu dài'],
+      ];
+      return panel(
+        '<div class="my-asset-heading">' +
+          '<button type="button" class="asset-name" data-act="asset|' +
+          h(row.id) +
+          '">' +
+          '<span class="asset-symbol">' +
+          icon(assetGlyph(row)) +
+          '</span><span class="stack"><small>' +
+          h(row.code) +
+          '</small><strong>' +
+          h(row.name) +
+          '</strong></span></button>' +
+          (category ? chip(category.name, 'slate') : '') +
+          '</div>' +
+          '<dl>' +
+          facts
+            .map(([label, value]) => '<div><dt>' + h(label) + '</dt><dd>' + value + '</dd></div>')
             .join('') +
-          '</div>'
+          '</dl>' +
+          (row.note ? '<p class="my-asset-note">' + h(row.note) + '</p>' : '') +
+          actionsRow(
+            row.confirmed
+              ? chip('Đã xác nhận', 'emerald')
+              : act('confirmAsset|' + row.id, 'Xác nhận đã nhận', 'check', 'btn sm primary'),
+          ),
+        'my-asset' + (row.confirmed ? '' : ' my-asset--pending'),
+      );
+    });
+    return (
+      header(
+        raw('nav.myAssets'),
+        'Thiết bị công ty đã bàn giao cho bạn. Hãy xác nhận khi đã nhận.',
+      ) +
+      (cards.length
+        ? '<div class="card-grid my-asset-grid">' + cards.join('') + '</div>'
         : panel(placeholder('Hiện bạn chưa giữ tài sản nào.', 'devices')))
     );
   }
@@ -772,43 +1050,69 @@
   }
   function budgetDetail(data, project, standalone = true) {
     const info = MockApi.budget(data, project);
-    const summary = stats([
-      stat('Ngân sách', money(info.limit), 'account_balance_wallet', 'indigo'),
-      stat('Đã chi', money(info.spent), 'payments', 'amber'),
-      stat('Chi phí nhân sự', money(info.labor), 'schedule', 'emerald'),
-      stat('Chi phí khác', money(info.other), 'receipt_long', 'rose'),
-    ]);
-    const details =
-      panel(
-        '<div class="toolbar"><strong>' +
-          t('budgets.list.usage') +
-          ' ' +
-          Math.round(info.percent) +
-          '%</strong>' +
-          statusTag('budgets', budgetStatus(info)) +
-          '<span class="spacer"></span>' +
-          act('setBudget|' + project.id, 'Đặt ngân sách', 'edit', 'btn sm') +
-          '</div>' +
-          bar(info.percent),
-      ) +
-      panel(
-        '<div class="toolbar"><strong>Chi phí khác</strong><span class="spacer"></span>' +
-          act('expenseForm|' + project.id, 'Thêm chi phí', 'add', 'btn sm primary') +
-          '</div>' +
-          table(
-            ['Chi phí', 'Ngày', 'Số tiền', ''],
-            info.expenses.map((row) => [
-              h(row.title),
-              fmtDate(row.date),
-              h(money(row.amount)),
-              actionsRow(
-                iconBtn('expenseForm|' + project.id + '|' + row.id, 'Sửa chi phí', 'edit') +
-                  iconBtn('deleteExpense|' + row.id, 'Xóa chi phí', 'delete'),
-              ),
-            ]),
-            'Chưa có chi phí khác.',
-          ),
+    const remaining = info.limit - info.spent;
+    const taskIds = new Set(
+      data.tasks.filter((row) => row.projectId === project.id).map((row) => row.id),
+    );
+    const projected = data.worklogs
+      .filter((row) => row.status === 'Pending' && taskIds.has(row.taskId))
+      .reduce(
+        (sum, row) =>
+          sum + Math.round((row.minutes * D.rateAt(data, row.userId, row.workDate)) / 60),
+        0,
       );
+    const widthOf = (amount) =>
+      Math.min(100, Math.max(0, (amount / (info.limit || info.spent || 1)) * 100));
+    const summary = panel(
+      '<div class="toolbar"><h2>Ngân sách dự án</h2>' +
+        statusTag('budgets', budgetStatus(info)) +
+        '<span class="spacer"></span>' +
+        act('setBudget|' + project.id, 'Đặt ngân sách', 'edit', 'btn sm') +
+        '</div><dl class="budget-figures">' +
+        [
+          ['Ngân sách', info.limit],
+          ['Đã chi', info.spent],
+          ['Còn lại', remaining],
+          ['Dự kiến thêm', projected],
+        ]
+          .map(
+            ([label, value]) =>
+              '<div><dt>' + h(label) + '</dt><dd>' + h(money(value)) + '</dd></div>',
+          )
+          .join('') +
+        '</dl><div class="budget-legend"><span>' +
+        h(t('budgets.list.usage')) +
+        '</span><strong>' +
+        Math.round(info.percent) +
+        '%</strong></div><div class="budget-spend" aria-hidden="true"><i style="width:' +
+        widthOf(info.labor) +
+        '%"></i><i style="width:' +
+        Math.min(100 - widthOf(info.labor), widthOf(info.other)) +
+        '%"></i></div><div class="budget-legend budget-legend--items"><span>Nhân công ' +
+        h(money(info.labor)) +
+        '</span><span>Chi phí khác ' +
+        h(money(info.other)) +
+        '</span></div>',
+      'budget-summary',
+    );
+    const details = panel(
+      '<div class="toolbar"><strong>Chi phí khác</strong><span class="spacer"></span>' +
+        act('expenseForm|' + project.id, 'Thêm chi phí', 'add', 'btn sm primary') +
+        '</div>' +
+        table(
+          ['Chi phí', 'Ngày', 'Số tiền', ''],
+          info.expenses.map((row) => [
+            h(row.title),
+            fmtDate(row.date),
+            h(money(row.amount)),
+            actionsRow(
+              iconBtn('expenseForm|' + project.id + '|' + row.id, 'Sửa chi phí', 'edit') +
+                iconBtn('deleteExpense|' + row.id, 'Xóa chi phí', 'delete'),
+            ),
+          ]),
+          'Chưa có chi phí khác.',
+        ),
+    );
     return (
       (standalone
         ? crumbs([
@@ -822,8 +1126,8 @@
           )
         : '') +
       summary +
-      details +
-      D.budgetReports(data, project)
+      D.budgetReports(data, project) +
+      details
     );
   }
   function budgets(data, id) {
@@ -875,10 +1179,27 @@
           all
             .filter(([row]) => matches(state.view.budgetQuery, row.name, row.key))
             .map(([project, value]) => [
-              link('budgets/' + project.id, project.name, 'folder_open', 'plain-button'),
+              '<div class="budget-project"><span class="budget-key">' +
+                h(project.key) +
+                '</span><div class="stack">' +
+                link('budgets/' + project.id, project.name, '', 'plain-button') +
+                '<small>' +
+                h(byId(data, 'workspaces', project.workspaceId)?.name || '') +
+                '</small></div></div>',
               h(money(value.limit)),
               h(money(value.spent)),
-              '<strong>' + Math.round(value.percent) + '%</strong>' + bar(value.percent),
+              '<span class="budget-usage">' +
+                bar(
+                  value.percent,
+                  budgetStatus(value) === 'Over'
+                    ? '#e11d48'
+                    : budgetStatus(value) === 'Warning'
+                      ? '#d97706'
+                      : '#6366f1',
+                ) +
+                '<strong>' +
+                Math.round(value.percent) +
+                '%</strong></span>',
               statusTag('budgets', budgetStatus(value)),
             ]),
         ),
@@ -900,92 +1221,165 @@
         ),
     );
   }
+  function requestBadge(row) {
+    const glyphs = {
+      Pending: 'schedule',
+      Approved: 'sync_alt',
+      Done: 'check_circle',
+      Rejected: 'cancel',
+      Cancelled: 'block',
+    };
+    return (
+      '<span class="status status--' +
+      h(row.status) +
+      '" title="' +
+      t('requests.status.' + row.status) +
+      '">' +
+      icon(glyphs[row.status] || 'info') +
+      t('requests.status.' + row.status) +
+      '</span>'
+    );
+  }
+  function requestPriority(row) {
+    const label = { High: 'Cao', Urgent: 'Khẩn cấp', Low: 'Thấp' }[row.priority];
+    return label
+      ? '<span class="row__priority row__priority--' + h(row.priority) + '">' + h(label) + '</span>'
+      : '';
+  }
   function requests(data, id) {
-    if (id && state.view.openedRequest !== id) {
-      state.view.openedRequest = id;
-      queueMicrotask(() => {
-        if (state.route === 'requests/' + id) openRequest(id, true);
-      });
-    }
-    const tab =
-      state.view.requestTab ||
-      (id && byId(data, 'requests', id)?.requesterId !== data.currentUserId ? 'inbox' : 'mine');
-    const choices = [
-      ['mine', 'outbox'],
-      ['inbox', 'move_to_inbox'],
-      ['templates', 'dynamic_form'],
-    ];
-    const toolbar =
-      '<div class="toolbar">' +
-      tabs(
-        'requestTab',
-        choices.map(([key, glyph]) => [key, raw('requests.tabs.' + key), glyph]),
-        tab,
-      ) +
-      '</div>';
+    const selected = state.view.requestSelected || id;
+    const item = byId(data, 'requests', selected);
+    const tab = item
+      ? item.requesterId === data.currentUserId
+        ? 'mine'
+        : 'inbox'
+      : state.view.requestTab || 'mine';
+    const own = data.requests.filter((row) => row.requesterId === data.currentUserId);
+    const inbox = data.requests.filter((row) => row.requesterId !== data.currentUserId);
+    const toolbar = tabs(
+      'requestTab',
+      [
+        [
+          'mine',
+          raw('requests.tabs.mine'),
+          'outbox',
+          own.filter((row) => ['Pending', 'Approved'].includes(row.status)).length,
+        ],
+        [
+          'inbox',
+          raw('requests.tabs.inbox'),
+          'move_to_inbox',
+          inbox.filter((row) => row.status === 'Pending').length,
+        ],
+        ['templates', raw('requests.tabs.templates'), 'dynamic_form'],
+      ],
+      tab,
+    );
     const action =
       tab === 'templates'
         ? act('templateForm', 'Mẫu yêu cầu mới', 'dynamic_form', 'btn primary')
         : act('newRequest', raw('requests.new.button') || 'Tạo yêu cầu', 'add', 'btn primary');
+    const head = header(raw('requests.title'), raw('requests.subtitle'), action) + toolbar;
     if (tab === 'templates')
       return (
-        header(raw('requests.title'), raw('requests.subtitle'), action) +
-        toolbar +
-        '<div class="card-grid">' +
+        '<div class="requests-reference">' +
+        head +
+        '<div class="templates">' +
         data.templates.map((row) => requestTemplateCard(data, row)).join('') +
-        '</div>'
+        '</div></div>'
       );
-    const rows = data.requests.filter(
+    const filtered = (tab === 'mine' ? own : inbox).filter(
       (row) =>
-        (tab === 'mine'
-          ? row.requesterId === data.currentUserId
-          : row.requesterId !== data.currentUserId) &&
         (!state.view.requestStatus || row.status === state.view.requestStatus) &&
         matches(state.view.requestQuery, row.title, row.code),
     );
-    const page = paginate('requestPage', rows);
-    return (
-      header(raw('requests.title'), raw('requests.subtitle'), action) +
-      toolbar +
-      '<div class="toolbar">' +
+    const page = paginate('requestPage', filtered);
+    const statuses = [
+      ['', 'Tất cả'],
+      ...['Pending', 'Approved', 'Done', 'Rejected', 'Cancelled'].map((status) => [
+        status,
+        raw('requests.status.' + status),
+      ]),
+    ];
+    const list =
+      '<section class="list"><div class="filters">' +
       searchField('requestQuery', raw('requests.search')) +
-      filter('requestStatus', 'Trạng thái', [
-        ['', 'Tất cả trạng thái'],
-        ...['Pending', 'Approved', 'Done', 'Rejected', 'Cancelled'].map((status) => [
-          status,
-          raw('requests.status.' + status),
-        ]),
-      ]) +
-      '</div>' +
-      panel(
-        table(
-          ['Mã', 'Tiêu đề', 'Bộ phận', 'Người gửi', 'Trạng thái', 'Ngày gửi'],
-          page.rows.map((row) => [
-            act('request|' + row.id, row.code, '', 'plain-button'),
-            act('request|' + row.id, row.title, '', 'plain-button'),
-            h(department(data, row.departmentId)),
-            h(empName(data, row.requesterId)),
-            statusTag('requests', row.status),
-            fmtDate(row.createdAt),
-          ]),
-          'Chưa có yêu cầu phù hợp.',
-        ) + page.foot,
-      )
+      '<div class="statuses" aria-label="Trạng thái">' +
+      statuses
+        .map(
+          ([value, label]) =>
+            '<button class="chip' +
+            (value === (state.view.requestStatus || '') ? ' chip--on' : '') +
+            '" type="button" data-act="requestFilter|' +
+            h(value) +
+            '" aria-pressed="' +
+            (value === (state.view.requestStatus || '')) +
+            '">' +
+            h(label) +
+            '</button>',
+        )
+        .join('') +
+      '</div></div>' +
+      (page.rows.length
+        ? '<ul class="rows">' +
+          page.rows
+            .map(
+              (row) =>
+                '<li><button type="button" class="row' +
+                (row.id === selected ? ' row--on' : '') +
+                '" data-act="request|' +
+                h(row.id) +
+                '"><span class="row__icon">' +
+                icon(row.templateId === 'equipment' ? 'devices' : 'description') +
+                '</span><span class="row__body"><span class="row__top"><span class="row__code">' +
+                h(row.code) +
+                '</span>' +
+                requestPriority(row) +
+                '</span><strong class="row__title">' +
+                h(row.title) +
+                '</strong><span class="row__meta">' +
+                h(empName(data, row.requesterId) + ' · ' + department(data, row.departmentId)) +
+                '</span></span><span class="request-row-aside"><small>' +
+                fmtDate(row.createdAt) +
+                '</small>' +
+                requestBadge(row) +
+                '</span></button></li>',
+            )
+            .join('') +
+          '</ul>'
+        : placeholder('Chưa có yêu cầu phù hợp.')) +
+      page.foot +
+      '</section>';
+    const missing = selected && !item;
+    return (
+      '<div class="requests-reference">' +
+      head +
+      '<div class="layout' +
+      (item || missing ? ' layout--detail' : '') +
+      '">' +
+      list +
+      (item
+        ? requestDetail(data, item)
+        : missing
+          ? '<section class="pane">' +
+            iconBtn('requestClose', 'Đóng chi tiết', 'close') +
+            placeholder('Yêu cầu đã thay đổi hoặc không còn trong dữ liệu demo.') +
+            '</section>'
+          : '') +
+      '</div></div>'
     );
   }
-  function openRequest(id, direct = false) {
+  function openRequest(id) {
+    state.view.requestSelected = id;
     const data = MockApi.snapshot();
-    const row = byId(data, 'requests', id);
-    if (!row) {
-      if (direct)
-        show(
-          'Không tìm thấy yêu cầu',
-          placeholder('Yêu cầu đã thay đổi hoặc không còn trong dữ liệu demo.'),
-        );
-      return;
-    }
+    const item = byId(data, 'requests', id);
+    if (item) state.view.requestTab = item.requesterId === data.currentUserId ? 'mine' : 'inbox';
+    render();
+  }
+  function requestDetail(data, row) {
+    const id = row.id;
     const task = row.taskId ? lookupTask(data, row.taskId) : null;
-    const unlockedAssets = data.assets.some((asset) => asset.status === 'Available');
+    const template = byId(data, 'templates', row.templateId);
     let controls = '';
     if (row.status === 'Pending')
       controls +=
@@ -1010,56 +1404,86 @@
         ) +
         (!task ? act('requestConvert|' + id, raw('requests.detail.convert'), 'task_alt') : '') +
         act('requestAssign|' + id, raw('requests.detail.assignee'), 'person_add') +
-        (row.templateId === 'equipment' && unlockedAssets
+        (row.templateId === 'equipment' && data.assets.some((asset) => asset.status === 'Available')
           ? act('requestHandover|' + id, raw('requests.detail.handOverAsset'), 'inventory_2')
           : '');
-    show(
-      row.code + ' · ' + row.title,
-      statusTag('requests', row.status) +
-        definitions([
-          [raw('requests.detail.requester'), h(empName(data, row.requesterId))],
-          [raw('requests.detail.department'), h(department(data, row.departmentId))],
-          [raw('requests.detail.handlers'), h(empName(data, row.assigneeId))],
-          [raw('requests.detail.sentAt'), fmtDate(row.createdAt)],
-          ...(task
-            ? [
-                [
-                  'Công việc',
-                  act(
-                    'task|' + task.id,
-                    task.code + ' · ' + task.title,
-                    'task_alt',
-                    'plain-button',
-                  ),
-                ],
-              ]
-            : []),
-        ]) +
-        '<h3>' +
-        t('requests.detail.answers') +
-        '</h3>' +
-        definitions(
-          row.answers.map((answer) => [
-            answer.label,
-            answer.files?.length ? D.attachmentRows(answer.files) : h(answer.value || '—'),
-          ]),
-        ) +
-        actionsRow(controls) +
-        '<h3>' +
-        t('requests.detail.history') +
-        '</h3>' +
-        row.history
-          .map(
-            (event) =>
-              '<div class="item-line"><div class="stack"><strong>' +
-              h(event.text) +
-              '</strong><small>' +
-              fmtDate(event.date) +
-              '</small></div></div>',
-          )
-          .join('') +
-        act('requestComment|' + id, 'Viết bình luận', 'chat_bubble_outline', 'btn sm'),
-      { glyph: 'move_to_inbox', drawer: true },
+    const steps = [
+      ['Đã gửi', 'send'],
+      ['Tiếp nhận', 'move_to_inbox'],
+      ['Hoàn thành', 'check_circle'],
+    ];
+    const stage = row.status === 'Done' ? 2 : row.status === 'Approved' ? 1 : 0;
+    const flow =
+      '<ol class="request-flow" aria-label="Tiến độ yêu cầu">' +
+      steps
+        .map(
+          ([label, glyph], index) =>
+            '<li class="' +
+            (index <= stage ? 'passed' : index === stage + 1 ? 'next' : '') +
+            '"><span>' +
+            icon(glyph) +
+            '</span>' +
+            h(label) +
+            '</li>',
+        )
+        .join('') +
+      '</ol>';
+    const facts = [
+      [raw('requests.detail.requester'), empName(data, row.requesterId)],
+      [raw('requests.detail.department'), department(data, row.departmentId)],
+      [raw('requests.detail.handlers'), empName(data, row.assigneeId)],
+      [raw('requests.detail.sentAt'), fmtDate(row.createdAt)],
+    ];
+    return (
+      '<section class="pane request-pane" aria-label="Chi tiết yêu cầu"><header class="request-pane-heading"><span class="request-pane-icon">' +
+      icon(row.templateId === 'equipment' ? 'devices' : 'description') +
+      '</span><div><small>' +
+      h(row.code + (template ? ' · ' + template.name : '')) +
+      '</small><h2>' +
+      h(row.title) +
+      '</h2><div class="row-actions">' +
+      requestBadge(row) +
+      requestPriority(row) +
+      '</div></div>' +
+      iconBtn('requestClose', 'Đóng chi tiết', 'close') +
+      '</header>' +
+      flow +
+      '<dl class="request-facts">' +
+      facts
+        .map(([label, value]) => '<div><dt>' + h(label) + '</dt><dd>' + h(value) + '</dd></div>')
+        .join('') +
+      '</dl>' +
+      (controls ? '<div class="request-controls">' + actionsRow(controls) + '</div>' : '') +
+      (task
+        ? '<p>' +
+          act('task|' + task.id, task.code + ' · ' + task.title, 'task_alt', 'plain-button') +
+          '</p>'
+        : '') +
+      '<h3>' +
+      t('requests.detail.answers') +
+      '</h3>' +
+      definitions(
+        row.answers.map((answer) => [
+          answer.label,
+          answer.files?.length ? D.attachmentRows(answer.files) : h(answer.value || '—'),
+        ]),
+      ) +
+      '<h3>' +
+      t('requests.detail.history') +
+      '</h3>' +
+      row.history
+        .map(
+          (event) =>
+            '<div class="item-line"><div class="stack"><strong>' +
+            h(event.text) +
+            '</strong><small>' +
+            fmtDate(event.date) +
+            '</small></div></div>',
+        )
+        .join('') +
+      '<div class="request-comment-action">' +
+      act('requestComment|' + id, 'Viết bình luận', 'chat_bubble_outline', 'btn sm') +
+      '</div></section>'
     );
   }
   function newRequest() {
@@ -1423,11 +1847,20 @@
   Object.assign(D, { budgetDetail, download, accountCell, definitions, statusTag });
   const str = (value) => (typeof value === 'string' ? value : '');
   const returnToRequest = (id, message) => {
-    refresh(message);
     openRequest(id);
+    D.showToast(message);
   };
   Object.assign(actions, {
     logForm: (date) => logForm(str(date) || today()),
+    assetFilter: (status) => {
+      state.view.assetStatus = status === 'all' ? '' : status;
+      delete state.view.assetPage;
+      render();
+    },
+    toggleLogDay: (day) => {
+      state.view.expandedLogDay = state.view.expandedLogDay === day ? '' : day;
+      render();
+    },
     logFor: (id) => logForm(today(), id),
     logDetail,
     editLog: (id) => logForm(today(), '', id),
@@ -1654,6 +2087,19 @@
         'Xóa',
       ),
     request: (id) => openRequest(id),
+    requestFilter: (status) => {
+      state.view.requestStatus = status;
+      delete state.view.requestPage;
+      render();
+    },
+    requestClose: () => {
+      delete state.view.requestSelected;
+      if (state.route.startsWith('requests/')) {
+        const row = byId(MockApi.snapshot(), 'requests', state.route.split('/')[1]);
+        const tab = row && row.requesterId !== MockApi.snapshot().currentUserId ? 'inbox' : 'mine';
+        go('requests', 'view:requestTab:' + tab);
+      } else render();
+    },
     newRequest,
     templateForm: (id) => templateForm(str(id)),
     requestAction: (id, action) => {

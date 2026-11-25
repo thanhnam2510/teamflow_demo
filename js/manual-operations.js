@@ -215,13 +215,13 @@
     downloadBlob(name, zip(entries));
   }
   function reports(data, date) {
-    const week = state.view.sheetMode === 'week';
+    const week = state.view.sheetMode !== 'month';
     const start = week ? D.monday(date) : date.slice(0, 7) + '-01';
     const finish = week ? shift(start, 7) : D.monthStep(start, 1);
     const days = [];
     for (let day = start; day < finish; day = shift(day, 1)) days.push(day);
     const scope = state.view.sheetScope || 'mine';
-    const includePending = !!state.view.sheetPending;
+    const includePending = state.view.sheetPending !== false;
     const list = data.employees.filter(
       (employee) =>
         (scope === 'all'
@@ -265,32 +265,39 @@
   }
   function timesheet(data, date, monthToolbar) {
     const { set, days } = reports(data, date);
-    const total = set.reduce((a, row) => a + row.total, 0);
-    const target = set.reduce((a, row) => a + row.target, 0);
+    const total = set.reduce((sum, row) => sum + row.total, 0);
+    const target = set.reduce((sum, row) => sum + row.target, 0);
+    const isWeek = state.view.sheetMode !== 'month';
     const manager = data.employees.some((row) => canReview(data, row.id));
     const admin = person(data, data.currentUserId).role === 'Admin';
+    const weekday = new Intl.DateTimeFormat(state.lang === 'vi' ? 'vi-VN' : 'en-GB', {
+      weekday: 'short',
+    });
+    const dayCell = (value, standard, day) => {
+      const variant =
+        day > today()
+          ? 'future'
+          : !standard
+            ? 'off'
+            : !value
+              ? 'missing'
+              : value < standard
+                ? 'short'
+                : 'enough';
+      const label = value ? h(hours(value)) : '<span aria-label="Chưa ghi giờ">—</span>';
+      return '<span class="sheet-day sheet-day--' + variant + '">' + label + '</span>';
+    };
+    const summary = [
+      ['Tổng giờ đã log', hours(total)],
+      ['Giờ chuẩn đến hôm nay', hours(target)],
+      ['Chênh lệch đến hôm nay', hours(total - target), total < target],
+      [
+        'Người còn thiếu giờ',
+        set.filter((row) => row.total < row.target).length + '/' + set.length,
+      ],
+    ];
     return (
-      '<div class="toolbar">' +
-      tabs(
-        'sheetMode',
-        [
-          ['week', 'Tuần'],
-          ['month', 'Tháng'],
-        ],
-        state.view.sheetMode || 'month',
-      ) +
-      (state.view.sheetMode === 'week'
-        ? iconBtn('sheetShift|-1', 'Tuần trước', 'chevron_left') +
-          '<strong>' +
-          fmtDate(days[0]) +
-          ' – ' +
-          fmtDate(days.at(-1)) +
-          '</strong>' +
-          iconBtn('sheetShift|1', 'Tuần sau', 'chevron_right')
-        : monthToolbar('logMonth', date)) +
-      '<span class="spacer"></span>' +
-      act('timesheetXlsx', 'Xuất Excel', 'download', 'btn primary') +
-      '</div><div class="toolbar">' +
+      '<div class="toolbar sheet-toolbar">' +
       filter('sheetScope', 'Phạm vi', [
         ['mine', 'Của tôi'],
         ...(manager ? [['team', 'Nhóm của tôi']] : []),
@@ -301,41 +308,68 @@
       act(
         'sheetInclude',
         'Gồm giờ chờ duyệt',
-        state.view.sheetPending ? 'check_box' : 'check_box_outline_blank',
-        'btn sm',
+        state.view.sheetPending !== false ? 'toggle_on' : 'toggle_off',
+        'btn sm sheet-toggle',
       ) +
+      '<span class="spacer"></span>' +
+      tabs(
+        'sheetMode',
+        [
+          ['week', 'Tuần'],
+          ['month', 'Tháng'],
+        ],
+        isWeek ? 'week' : 'month',
+      ) +
+      (isWeek
+        ? '<div class="row-actions">' +
+          iconBtn('sheetShift|-1', 'Tuần trước', 'chevron_left') +
+          '<strong>' +
+          fmtDate(days[0]) +
+          ' – ' +
+          fmtDate(days.at(-1)) +
+          '</strong>' +
+          iconBtn('sheetShift|1', 'Tuần sau', 'chevron_right') +
+          '</div>'
+        : monthToolbar('logMonth', date)) +
+      '</div><div class="sheet-summary">' +
+      summary
+        .map(
+          ([label, value, warn]) =>
+            '<div><strong' +
+            (warn ? ' class="sheet-short"' : '') +
+            '>' +
+            h(value) +
+            '</strong><small>' +
+            h(label) +
+            '</small></div>',
+        )
+        .join('') +
+      act('timesheetXlsx', 'Xuất Excel', 'download', 'btn primary sheet-export') +
       '</div>' +
-      stats([
-        stat('Tổng giờ đã log', hours(total), 'schedule', 'indigo'),
-        stat('Giờ chuẩn', hours(target), 'event', 'indigo'),
-        stat(
-          'Chênh lệch đến hôm nay',
-          hours(total - target),
-          'insights',
-          total < target ? 'rose' : 'emerald',
-        ),
-        stat(
-          'Người còn thiếu giờ',
-          set.filter((row) => row.total < row.target).length,
-          'people',
-          'amber',
-        ),
-      ]) +
       panel(
         table(
-          ['Nhân viên', ...days.map(D.shortDate), 'Tổng', 'Chênh lệch'],
+          [
+            'Nhân viên',
+            ...days.map((day) =>
+              isWeek ? weekday.format(from(day)) + ' ' + D.shortDate(day) : D.shortDate(day),
+            ),
+            'Tổng',
+            'Chuẩn',
+            'Chênh lệch',
+          ],
           set.map((row) => [
             D.accountCell(data, row.employee.id),
-            ...row.recorded.map((value, i) =>
-              value
-                ? chip(hours(value), value < row.standard[i] ? 'rose' : 'emerald')
-                : '<span class="muted">—</span>',
-            ),
-            h(hours(row.total)),
-            chip(hours(row.total - row.target), row.total < row.target ? 'rose' : 'emerald'),
+            ...row.recorded.map((value, index) => dayCell(value, row.standard[index], days[index])),
+            '<strong>' + h(hours(row.total)) + '</strong>',
+            h(hours(row.target)),
+            '<strong' +
+              (row.total < row.target ? ' class="sheet-short"' : '') +
+              '>' +
+              h(hours(row.total - row.target)) +
+              '</strong>',
           ]),
         ),
-        'timesheet-manual',
+        'timesheet-manual reference-table',
       )
     );
   }
@@ -351,29 +385,52 @@
         canReview(data, row.id) &&
         (!state.view.leaveDept || row.departmentId === state.view.leaveDept),
     );
-    const quota = person(data, data.currentUserId).allowances?.[year];
-    const summary = stats([
-      stat(
-        'Phép năm còn lại',
-        remainingLeave(data, data.currentUserId, year) + ' ngày',
-        'beach_access',
-        'indigo',
-      ),
-      stat(
-        'Đang chờ duyệt',
-        mine.filter((row) => row.status === 'Pending').length,
-        'schedule',
-        'amber',
-      ),
-      stat(
-        'Đã duyệt',
-        mine
-          .filter((row) => row.status === 'Approved')
-          .reduce((sum, row) => sum + leaveDays(row), 0) + ' ngày',
-        'check_circle',
-        'emerald',
-      ),
-    ]);
+    const balance = remainingLeave(data, data.currentUserId, year);
+    const isAnnual = (row) => row.type === leaveTypes[0] && row.startDate.startsWith(year);
+    const used = mine
+      .filter((row) => row.status === 'Approved' && isAnnual(row))
+      .reduce((sum, row) => sum + leaveDays(row), 0);
+    const pending = mine
+      .filter((row) => row.status === 'Pending')
+      .reduce((sum, row) => sum + leaveDays(row), 0);
+    const next = mine
+      .filter((row) => row.status === 'Approved' && row.endDate >= today())
+      .sort((first, second) => first.startDate.localeCompare(second.startDate))[0];
+    const allowance = balance + used;
+    const progress = allowance > 0 ? Math.max(0, Math.min(100, (balance * 100) / allowance)) : 0;
+    const summary =
+      panel(
+        '<div class="leave-balance-ring" style="--remaining:' +
+          progress +
+          '%"><strong>' +
+          h(balance) +
+          '</strong><small>/ ' +
+          h(allowance) +
+          '</small></div><div class="leave-balance-main">' +
+          '<small>' +
+          icon('beach_access') +
+          'PHÉP NĂM ' +
+          h(year) +
+          '</small><strong>Còn ' +
+          h(balance + '/' + allowance) +
+          ' ngày</strong>' +
+          bar(progress, '#0ea5e9') +
+          '<p>Đã dùng ' +
+          h(used) +
+          ' ngày · Đang chờ ' +
+          h(pending) +
+          ' ngày</p></div>',
+        'leave-balance',
+      ) +
+      stats([
+        stat('Đang chờ duyệt', pending + ' ngày', 'schedule', 'amber'),
+        stat(
+          'Kỳ nghỉ sắp tới',
+          next ? fmtDate(next.startDate) : 'Chưa có',
+          'event_available',
+          'emerald',
+        ),
+      ]);
     const managing =
       '<div class="toolbar">' +
       filter('leaveDept', 'Phòng ban', [['', 'Tất cả phòng ban'], ...D.options(data.departments)]) +
@@ -508,25 +565,11 @@
     assetCondition(row.condition) +
     '</div>' +
     field('Ghi chú', 'note', row.note, { type: 'textarea' });
-  function assetDetailActions(data, row) {
+  function assetDetailActions(row) {
     if (row.status === 'Disposed') return '';
     const actions = [];
-    if (row.status === 'Available')
-      actions.push(act('maintenanceForm|' + row.id, 'Lập lịch bảo trì', 'build'));
-    if (row.status === 'InRepair')
-      actions.push(
-        act(
-          'assetStatus|' + row.id + '|finish',
-          'Ghi nhận sửa xong',
-          'build_circle',
-          'btn primary',
-        ),
-      );
-    if (row.status === 'Lost')
-      actions.push(
-        act('assetStatus|' + row.id + '|found', 'Đã tìm thấy', 'travel_explore', 'btn primary'),
-      );
-    else actions.push(act('assetStatus|' + row.id + '|lost', 'Đánh dấu thất lạc', 'report'));
+    if (row.status !== 'Lost')
+      actions.push(act('assetStatus|' + row.id + '|lost', 'Đánh dấu thất lạc', 'report'));
     if (row.status !== 'Assigned')
       actions.push(act('assetStatus|' + row.id + '|dispose', 'Thanh lý', 'recycling'));
     if (
@@ -535,55 +578,60 @@
       !row.maintenance?.length &&
       !(row.history || []).some((event) => /bàn giao|thu hồi/i.test(event.text))
     )
-      actions.push(iconBtn('assetStatus|' + row.id + '|delete', 'Xóa tài sản', 'delete'));
-    return actions.join('');
-  }
-  function assetDetailPanels(data, row) {
+      actions.push(act('assetStatus|' + row.id + '|delete', 'Xóa tài sản', 'delete'));
     return (
-      '<div class="split asset-extra">' +
-      panel(
-        '<h2>Bảo trì & sửa chữa</h2>' +
-          table(
-            ['Ngày', 'Loại', 'Nội dung', 'Trạng thái', ''],
-            (row.maintenance || []).map((ticket) => [
-              fmtDate(ticket.date),
-              h(ticket.kind),
-              h(ticket.note),
-              chip(ticket.status, 'indigo'),
-              actionRow(
-                (ticket.status === 'Đã lên lịch'
+      '<details class="asset-more"><summary class="icon-btn" aria-label="Tùy chọn tài sản">' +
+      icon('more_vert') +
+      '</summary><div>' +
+      actions.join('') +
+      '</div></details>'
+    );
+  }
+  function assetMaintenancePanel(row) {
+    return panel(
+      '<h2>Bảo trì & sửa chữa</h2>' +
+        table(
+          ['Ngày', 'Loại', 'Nội dung', 'Trạng thái', ''],
+          (row.maintenance || []).map((ticket) => [
+            fmtDate(ticket.date),
+            h(ticket.kind),
+            h(ticket.note),
+            chip(ticket.status, 'indigo'),
+            actionRow(
+              (ticket.status === 'Đã lên lịch'
+                ? act(
+                    'maintenanceState|' + row.id + '|' + ticket.id + '|start',
+                    'Bắt đầu',
+                    'build',
+                    'btn sm',
+                  )
+                : '') +
+                (['Đã lên lịch', 'Đang thực hiện'].includes(ticket.status)
                   ? act(
-                      'maintenanceState|' + row.id + '|' + ticket.id + '|start',
-                      'Bắt đầu',
-                      'build',
+                      'maintenanceState|' + row.id + '|' + ticket.id + '|cancel',
+                      'Hủy phiếu',
+                      'close',
                       'btn sm',
                     )
-                  : '') +
-                  (['Đã lên lịch', 'Đang thực hiện'].includes(ticket.status)
-                    ? act(
-                        'maintenanceState|' + row.id + '|' + ticket.id + '|cancel',
-                        'Hủy phiếu',
-                        'close',
-                        'btn sm',
-                      )
-                    : ''),
-              ),
-            ]),
-            'Chưa có phiếu bảo trì.',
-          ),
-      ) +
-      panel(
-        '<h2>Mã QR</h2><p>Quét mã để mở tài sản ' +
-          h(row.code) +
-          '.</p><img class="asset-qr" data-asset-qr="' +
-          h(row.id) +
-          '" alt="Mã QR của ' +
-          h(row.code) +
-          '"><div>' +
-          act('assetPrint|' + row.id, 'In tem QR', 'print') +
-          '</div>',
-      ) +
-      '</div>'
+                  : ''),
+            ),
+          ]),
+          'Chưa có phiếu bảo trì.',
+        ),
+    );
+  }
+  function assetQrPanel(row) {
+    return panel(
+      '<h2>Mã QR</h2><img class="asset-qr" data-asset-qr="' +
+        h(row.id) +
+        '" alt="Mã QR của ' +
+        h(row.code) +
+        '"><p>Quét mã để mở tài sản ' +
+        h(row.code) +
+        '.</p><div class="qr__actions">' +
+        act('assetPrint|' + row.id, 'In tem QR', 'print') +
+        '</div>',
+      'qr',
     );
   }
   const assetHistory = (row, textValue) => row.history.push({ date: today(), text: textValue });
@@ -682,38 +730,78 @@
         matches(state.view.securityQuery, row.text, person(data, row.actor)?.fullName),
     );
     const categories = [...new Set(data.security.map((row) => row.category).filter(Boolean))];
+    const recent = data.security.filter((row) => (row.time || row.date) >= D.shift(today(), -1));
+    const signIns = recent.filter((row) => row.category === 'Đăng nhập');
+    const failures = signIns.filter((row) => /thất bại|đăng nhập sai/i.test(row.text));
+    const admins = data.employees.filter((row) => row.role === 'Admin');
+    const permissionChanges = data.security
+      .filter((row) => row.category === 'Phân quyền')
+      .slice(0, 4);
+    const latest = data.backups?.[0];
     return (
       header(
         raw('nav.security'),
         'Theo dõi tài khoản, đăng nhập và các thay đổi trong TeamFlow.',
-        act('securityExport', 'Xuất nhật ký CSV', 'download'),
+        link('admin/backups', raw('nav.backups'), 'backup') +
+          act('securityExport', 'Xuất nhật ký CSV', 'download', 'btn primary'),
       ) +
       stats([
-        stat(
-          'Đăng nhập',
-          data.security.filter((row) => row.category === 'Đăng nhập').length,
-          'login',
-          'indigo',
-        ),
+        stat('Lượt đăng nhập gần đây', signIns.length - failures.length, 'login', 'indigo'),
+        stat('Đăng nhập sai gần đây', failures.length, 'gpp_bad', 'rose'),
         stat(
           'Tài khoản bị khóa',
           data.employees.filter((row) => row.locked).length,
           'lock',
-          'rose',
+          'indigo',
         ),
         stat(
-          'Lời mời chưa kích hoạt',
+          'Lời mời chờ kích hoạt',
           data.employees.filter((row) => row.invited).length,
-          'person_add',
+          'schedule_send',
           'amber',
         ),
         stat(
-          'Quản trị viên',
-          data.employees.filter((row) => row.role === 'Admin').length,
-          'shield',
-          'emerald',
+          'Không hoạt động 90 ngày',
+          data.employees.filter((row) => row.lastLoginAt && row.lastLoginAt < D.shift(today(), -90))
+            .length,
+          'bedtime',
+          'indigo',
         ),
+        stat('Sao lưu gần nhất', latest ? fmtDate(latest.at) : 'Chưa có', 'cloud_done', 'emerald'),
       ]) +
+      '<div class="security-panels">' +
+      panel(
+        '<h2>' +
+          icon('admin_panel_settings') +
+          'Quản trị viên (' +
+          admins.length +
+          ')</h2>' +
+          admins
+            .map(
+              (row) =>
+                '<div class="stack"><strong>' +
+                h(row.fullName) +
+                '</strong><small>' +
+                h(row.email) +
+                '</small></div>',
+            )
+            .join(''),
+      ) +
+      panel(
+        '<h2>' +
+          icon('gpp_maybe') +
+          'Đăng nhập sai gần đây</h2>' +
+          (failures.map((row) => '<p>' + h(row.text) + '</p>').join('') ||
+            '<p class="muted">Chưa ghi nhận đăng nhập sai.</p>'),
+      ) +
+      panel(
+        '<h2>' +
+          icon('history') +
+          'Thay đổi quyền gần đây</h2>' +
+          (permissionChanges.map((row) => '<p>' + h(row.text) + '</p>').join('') ||
+            '<p class="muted">Chưa ghi nhận thay đổi quyền.</p>'),
+      ) +
+      '</div>' +
       panel(
         '<h2>Nhật ký</h2><div class="toolbar">' +
           searchField('securityQuery', 'Tìm sự kiện hoặc tên…') +
@@ -797,30 +885,45 @@
       header(
         raw('nav.backups'),
         'Sao lưu dữ liệu giả lập trên trình duyệt.',
-        act('backupUpload', 'Tải lên bản sao lưu', 'upload') +
+        link('admin/security', raw('nav.security'), 'shield') +
+          act('backupUpload', 'Tải lên bản sao lưu', 'upload') +
           act('backupNow', 'Sao lưu ngay', 'backup', 'btn primary'),
       ) +
       stats([
-        stat('Bản sao lưu gần nhất', rows[0] ? fmtDate(rows[0].at) : '—', 'backup', 'indigo'),
-        stat('Bản sao lưu', rows.length, 'folder', 'emerald'),
-        stat('Sao lưu tự động máy chủ', 'Mô phỏng', 'schedule', 'amber'),
+        stat(
+          'Bản sao lưu gần nhất',
+          rows[0] ? fmtDate(rows[0].at) : 'Chưa có',
+          'cloud_done',
+          'emerald',
+        ),
+        stat('Lịch sao lưu máy chủ', 'Mô phỏng', 'event_repeat', 'indigo'),
+        stat('Bản sao lưu đang lưu', rows.length, 'inventory_2', 'indigo'),
+        stat(
+          'Dữ liệu bản sao lưu',
+          Math.round(new Blob([JSON.stringify(rows)]).size / 1024) + ' KB',
+          'storage',
+          'indigo',
+        ),
       ]) +
+      '<p class="backup-note muted">' +
+      icon('info') +
+      'Tệp ZIP chứa một bản chụp dữ liệu demo trên trình duyệt.</p>' +
       panel(
-        '<p class="muted">Tệp ZIP của demo chứa bản chụp dữ liệu giả lập. Chức năng sao lưu và khôi phục MySQL hoạt động trên hệ thống có máy chủ.</p>' +
-          table(
-            ['Bản sao lưu', 'Loại', 'Thời gian', 'Thao tác'],
-            rows.map((row) => [
-              h(row.name),
-              chip(row.kind, 'indigo'),
-              h(D.localDateTime(row.at)),
-              actionRow(
-                iconBtn('backupDownload|' + row.id, 'Tải xuống', 'download') +
-                  act('backupRestore|' + row.id, 'Khôi phục', 'restore', 'btn sm') +
-                  iconBtn('backupDelete|' + row.id, 'Xóa bản sao lưu', 'delete'),
-              ),
-            ]),
-            'Chưa có bản sao lưu.',
-          ),
+        table(
+          ['Bản sao lưu', 'Loại', 'Thời gian', 'Thao tác'],
+          rows.map((row) => [
+            h(row.name),
+            chip(row.kind, 'indigo'),
+            h(D.localDateTime(row.at)),
+            actionRow(
+              iconBtn('backupDownload|' + row.id, 'Tải xuống', 'download') +
+                act('backupRestore|' + row.id, 'Khôi phục', 'restore', 'btn sm') +
+                iconBtn('backupDelete|' + row.id, 'Xóa bản sao lưu', 'delete'),
+            ),
+          ]),
+          'Chưa có bản sao lưu.',
+        ),
+        'reference-table',
       )
     );
   }
@@ -845,7 +948,8 @@
     assetCondition,
     assetExtraFields,
     assetDetailActions,
-    assetDetailPanels,
+    assetMaintenancePanel,
+    assetQrPanel,
     xlsx,
     csv,
   });
@@ -924,7 +1028,7 @@
         'Duyệt',
       ),
     sheetInclude: () => {
-      state.view.sheetPending = !state.view.sheetPending;
+      state.view.sheetPending = state.view.sheetPending === false;
       render();
     },
     sheetShift: (delta) => {

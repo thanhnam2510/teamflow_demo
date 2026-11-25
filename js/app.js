@@ -161,10 +161,12 @@ window.Demo = (() => {
     h(label) +
     '</option>';
   const tabs = (name, options, current) =>
-    '<div class="tabs" role="tablist">' +
+    '<div class="tabs" role="tablist" data-tabs="' +
+    h(name) +
+    '">' +
     options
       .map(
-        ([value, label, glyph]) =>
+        ([value, label, glyph, count]) =>
           '<button type="button" role="tab" aria-selected="' +
           (current === value) +
           '" data-act="view|' +
@@ -176,6 +178,7 @@ window.Demo = (() => {
           '">' +
           (glyph ? icon(glyph) : '') +
           h(label) +
+          (count ? '<span class="tab__count">' + h(count) + '</span>' : '') +
           '</button>',
       )
       .join('') +
@@ -642,7 +645,9 @@ window.Demo = (() => {
     root.innerHTML = standalone ? '<main id="content" class="standalone"></main>' : shell(data);
     const sidebar = root.querySelector('.sidebar');
     if (sidebar) sidebar.scrollTop = position;
-    root.querySelector('#content').innerHTML = (
+    const content = root.querySelector('#content');
+    content.dataset.page = key || 'home';
+    content.innerHTML = (
       standalone ||
       (forbidden
         ? () => header('Bạn chưa có quyền truy cập', '', link('', 'Về tổng quan', 'arrow_back'))
@@ -810,6 +815,14 @@ window.Demo = (() => {
     },
     view: (name, value) => {
       state.view[name] = value;
+      if (name === 'requestTab') {
+        delete state.view.requestSelected;
+        delete state.view.requestPage;
+        if (location.hash.startsWith('#/requests/')) {
+          go('requests', 'view:requestTab:' + value);
+          return;
+        }
+      }
       if (['taskMode', 'calendarMode'].includes(name)) DemoStorage.preference(name, value);
       render();
     },
@@ -886,6 +899,7 @@ window.Demo = (() => {
     const item = event.target;
     if (item.matches('select[data-view]')) {
       state.view[item.dataset.view] = item.value;
+      if (item.dataset.view === 'mineWorkspace') delete state.view.mineProject;
       for (const key of Object.keys(state.view)) if (key.endsWith('Page')) delete state.view[key];
       render(item.dataset.view);
     }

@@ -321,7 +321,7 @@
         row.employeeId === user.id && !['Hoàn tất', 'Đã hủy', 'Bị từ chối'].includes(row.status),
     );
     const identity =
-      '<aside class="identity"><div class="identity__banner"></div><div class="identity__body">' +
+      '<aside class="card identity"><div class="identity__cover"></div><div class="identity__body">' +
       (user.avatar
         ? '<img class="profile-avatar" src="' + h(user.avatar) + '" alt="Ảnh đại diện">'
         : avatar(user.fullName, 'lg')) +
@@ -344,9 +344,9 @@
     const edit =
       '<form class="profile-form" data-profile-edit><div class="field-grid">' +
       field('Họ tên', 'fullName', user.fullName, { required: true }) +
-      field('Email', 'email', user.email, { disabled: true, type: 'email' }) +
       field('Chức danh', 'jobTitle', user.jobTitle) +
       field('Số điện thoại', 'phone', user.phone, { type: 'tel' }) +
+      field('Email', 'email', user.email, { disabled: true, type: 'email' }) +
       '</div>' +
       field('Giới thiệu', 'bio', user.bio, { type: 'textarea' }) +
       '<p class="form-error" role="alert" hidden></p><button class="btn primary" type="submit">' +
@@ -394,14 +394,27 @@
     ];
     return (
       '<div class="profile-manual">' +
-      header(raw('nav.profile')) +
+      header(
+        'Hồ sơ cá nhân',
+        'Quản lý thông tin, ảnh đại diện, mật khẩu và các nhóm bạn tham gia.',
+      ) +
       '<div class="layout">' +
       identity +
       '<div class="main">' +
       cards
         .map(
           ([title, glyph, body]) =>
-            '<section class="card"><h2>' + icon(glyph) + h(title) + '</h2>' + body + '</section>',
+            '<section class="card"><header class="card__header"><span class="card__icon">' +
+            icon(glyph) +
+            '</span><div><h2>' +
+            h(title) +
+            '</h2>' +
+            (title === 'Thông tin cá nhân'
+              ? '<p>Đồng bộ để hiển thị các thông tin này trong hồ sơ của bạn.</p>'
+              : '') +
+            '</div></header>' +
+            body +
+            '</section>',
         )
         .join('') +
       '</div></div></div>'

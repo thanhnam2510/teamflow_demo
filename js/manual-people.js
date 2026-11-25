@@ -1413,7 +1413,7 @@
               )
               .join('') || '<p class="muted">Chưa đăng ký lớp học.</p>'),
         ) +
-        '</div><h2>Lớp đang nhận đăng ký</h2><div class="card-grid">' +
+        '</div><h2>Lớp đang nhận đăng ký</h2><div class="card-grid open-classes">' +
         training
           .filter((row) => row.status === 'Open' && row.selfRegister !== false)
           .map((row) => classCard(data, row))
